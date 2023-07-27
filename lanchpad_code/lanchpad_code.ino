@@ -2,11 +2,24 @@
   pot = potentiometers
 
 */
+
 #include "MIDIUSB.h"
+
 #include <Keypad.h>
+
+#include "Mux.h"
+#include <Arduino.h>
+
 #include <FastLED.h>
 
-#define LED_PIN     14
+using namespace admux;
+
+//Mux mux(Pinset(5, 6, 7));
+
+Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(15, 14, 16));
+
+
+#define LED_PIN 10
 #define NUM_LEDS 16
 
 CRGB leds[NUM_LEDS];
@@ -22,8 +35,8 @@ char keys[ROWS][COLS] = {
   {'H','I','J', 'K'}
 };
 
-byte rowPins[ROWS] = {9, 8, 7, 6};
-byte colPins[COLS] = {5, 4, 3, 2}; 
+byte rowPins[ROWS] = {2, 3, 4, 5};
+byte colPins[COLS] = {6, 7, 8, 9}; 
 
 Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
@@ -33,11 +46,11 @@ String msg;
 //
 //potentiometers
 //
-const byte number_of_pot = 4;
+const byte number_of_pot = 7;
 
 struct potentiometer {
 
-  int pin;
+  int mux_channel; 
   int control_number;
   int pre_value;
   int value;
@@ -45,7 +58,7 @@ struct potentiometer {
 
 };
 
-struct potentiometer potentiometers[number_of_pot];
+potentiometer potentiometers[number_of_pot];
 
 
 //buttons
@@ -68,17 +81,24 @@ void noteOff(byte channel, byte pitch, byte velocity) {
 
 void setup() {
 
-  potentiometers[0].pin = A0;
-  potentiometers[1].pin = A1;
-  potentiometers[2].pin = A2;
-  potentiometers[3].pin = A3;
+  Serial.begin(9600);
+  start_leds();
 
+  for(int i = 0; i < number_of_pot; i++) {
+    if(i == 3) {
+      potentiometers[i].mux_channel = 7;
+      continue;
+    }
+    potentiometers[i].mux_channel = i;
+  }
   potentiometers[0].control_number = 1;   //modulation
   potentiometers[1].control_number = 7;   //volume
   potentiometers[2].control_number = 10;  //pan
   potentiometers[3].control_number = 74;  //brigthness
+  potentiometers[4].control_number = 2;   //random
+  potentiometers[5].control_number = 3;  //random
+  potentiometers[6].control_number = 4;  //random
 
-  Serial.begin(9600);
   msg = "";
 
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS); 
@@ -90,41 +110,63 @@ void controlChange(byte channel, byte control, byte value) {
   MidiUSB.sendMIDI(event);
 }
 
-int pin;
+int mux_channel;
 int pre_value;
 int value;
 int control_number;
 int channel;
+int acceptance_rate = 60;
+
 
 void loop() {
 
+  //start_leds();
 
-  
+
+  // int data;
+  // for (byte i = 0; i < 4; i++) {
+  //   data = mux.read(i) /* Reads from channel i (returns a value from 0 to 1023) */;
+
+  //   Serial.print("Potentiometer at channel "); Serial.print(i); Serial.print(" is at "); Serial.print((double) (data) * 100 / 1023); Serial.println("%%");
+  // }
+  // Serial.println();
+
+  // delay(1500);
+
   //controloing potentiometers
-  for(int i = 0; i < number_of_pot; i++) {
+  for(byte i = 0; i < number_of_pot; i++) {
     
-    pin = potentiometers[i].pin;
-    potentiometers[i].value = analogRead(pin) / 8;
-    
-    channel = potentiometers[i].channel;
     control_number = potentiometers[i].control_number;
-    value = potentiometers[i].value;
 
+    mux_channel = potentiometers[i].mux_channel; //multiplexer channel
 
-    if(potentiometers[i].pre_value == potentiometers[i].value) {
-      continue;
-    }
-    controlChange(channel, control_number, value);
+    value = mux.read(mux_channel);
+
+    potentiometers[i].value = value;
+
+    //sending change of value only if there is a change on potentiometer
+    if( potentiometers[i].value < potentiometers[i].pre_value + acceptance_rate
+    && potentiometers[i].value > potentiometers[i].pre_value - acceptance_rate ) continue; 
+  
+    //printing to serial and testing
+    //Serial.print("Pot: "); Serial.print(i); Serial.print(" - "); Serial.println(value);
+
+    set_color_random(); 
+    //set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
+
+    //sending midi control change
+    controlChange(channel, control_number, value / 8);
     
     potentiometers[i].pre_value = potentiometers[i].value;
-    
-    
-    Serial.println(value);
 
-    if( i == 3) {
-      FastLED.setBrightness(potentiometers[i].value * 2);
-    }
+    if( i == 3) FastLED.setBrightness(potentiometers[i].value / 4);
+
+ 
   }
+
+  //Serial.println("");
+
+  //delay(1000);
   
   //controling notes
   if (kpd.getKeys())
@@ -143,8 +185,8 @@ void loop() {
               Serial.print("Note On");
               Serial.println(note);
 
-              set_color_random();
-              //set_color_ametysth();
+              //set_color_random();
+              set_color_ametysth();
              
           break;
               case HOLD:
@@ -176,6 +218,41 @@ void loop() {
 
 }
 
+void start_leds() {
+
+  for(int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Cyan;
+  }
+  FastLED.show();
+  delay(1000);
+
+  for(int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Red;
+  }
+  FastLED.show();
+  delay(1000);
+  // int change_red = 0;
+  // int change_green = 0;
+  // int change_blue = 0;
+
+  // int diffrence_in_color = 255 / NUM_LEDS;
+  // for(int i = 0; i < NUM_LEDS; i++) {
+
+  //   // leds[i] = CRGB (
+  //   //   change_red,
+  //   //   change_green,
+  //   //   change_blue
+  //   //   );
+  //     leds[i] = CRGB::Red;
+  //     change_red += diffrence_in_color;
+  //     change_green += diffrence_in_color;
+  //     change_blue += diffrence_in_color;
+  //     FastLED.show();
+  //     delay(100);
+  // }
+  //     delay(100);
+}
+
 void set_color_ametysth() {
   for(int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CRGB::Amethyst;
@@ -196,6 +273,44 @@ void set_color_random() {
       rand() %(255 - 0 + 1) + 0
       );
   }
+}
+
+void set_color_magenta() {
+  for(int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Magenta;
+  }
+}
+
+void set_color_and_progress(int pot_index, double progress) {
+  int num_of_leds_on = (int) (NUM_LEDS * progress);
+
+  uint8_t red = 0;
+  uint8_t green = 0;
+  uint8_t blue = 0;
+
+
+  switch(pot_index) {
+    case 0: 
+      red = 183;
+      green = 28;
+      blue = 28;
+      break;
+    case 1: 
+      red = 69;
+      green = 39;
+      blue = 160;
+      break;
+    case 2: 
+      red = 67;
+      green = 160;
+      blue = 71;
+      break;
+  }
+
+  for(int i = 0; i < NUM_LEDS; i++) {
+    leds[i].setRGB(red, green, blue);
+  } 
+  FastLED.show();
 }
 
 
