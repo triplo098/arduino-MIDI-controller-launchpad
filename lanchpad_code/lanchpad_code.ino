@@ -110,23 +110,10 @@ int pre_value;
 int value;
 int control_number;
 int channel;
-int acceptance_rate = 30;
+int acceptance_rate = 20;
 
 
 void loop() {
-
-  //start_leds();
-
-
-  // int data;
-  // for (byte i = 0; i < 4; i++) {
-  //   data = mux.read(i) /* Reads from channel i (returns a value from 0 to 1023) */;
-
-  //   Serial.print("Potentiometer at channel "); Serial.print(i); Serial.print(" is at "); Serial.print((double) (data) * 100 / 1023); Serial.println("%%");
-  // }
-  // Serial.println();
-
-  // delay(1500);
 
   //controloing potentiometers
   for(byte i = 0; i < number_of_pot; i++) {
@@ -147,30 +134,19 @@ void loop() {
     //Serial.print("Pot: "); Serial.print(i); Serial.print(" - "); Serial.println(value);
 
     //set_color_random(); 
-    set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
-
+    //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
+    set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); 
     //sending midi control change
     controlChange(channel, control_number, value / 8);
     
     potentiometers[i].pre_value = potentiometers[i].value;
 
-    if( i == 3) FastLED.setBrightness(potentiometers[i].value / 4);
+    //if( i == 3) FastLED.setBrightness(potentiometers[i].value / 4);
+    FastLED.setBrightness(potentiometers[i].value / 4);
 
-    // if( i == 6) { 
-    //   int choose_note = 24 + ((8 * potentiometers[i].value) / 1023) * 12; 
+    
+    if( i == 6) set_octave(potentiometers[i].value);
 
-    //   // Serial.println(choose_note);
-    //   for(int k = 0; k < (ROWS * COLS); k++) {
-    //       // keys[k][n] = choose_note + '0';
-    //       kpd.key[k].kchar = choose_note + '0';
-    //       Serial.println(kpd.key[k].kchar);
-    //       choose_note++;
-
-    //   }
-      Serial.println();
-    }
-
- 
   }
 
   //Serial.println("");
@@ -190,14 +166,13 @@ void loop() {
               msg = " PRESSED.";
 
               Serial.println(kpd.key[i].kchar);
-              note = kpd.key[i].kchar;
+              note = (int) kpd.key[i].kchar;
               noteOn(0, note, 127);
-              Serial.print("Note On");
+              Serial.print("Note On ");
               Serial.println(note);
 
               //set_color_random();
               set_color_ametysth();
-             
           break;
               case HOLD:
               msg = " HOLD.";
@@ -205,9 +180,9 @@ void loop() {
               case RELEASED:
               msg = " RELEASED.";
 
-              note = kpd.key[i].kchar;
+              note = (int) kpd.key[i].kchar;
               noteOff(0, note, 127);
-              Serial.print("Note Off");
+              Serial.print("Note Off ");
               Serial.println(note);
               //set_color_black();
 
@@ -215,9 +190,9 @@ void loop() {
               case IDLE:
               msg = " IDLE.";
           }
-          Serial.print("Key ");
+          //Serial.print("Key ");
           Serial.print(kpd.key[i].kchar);
-          Serial.println(msg);
+          //Serial.println(msg);
         }
       }
     }
@@ -234,13 +209,13 @@ void start_leds() {
   int change_green = 0;
   int change_blue = 0;
 
-  int diffrence_in_color = 30;
+  int diffrence_in_color = 31;
   for(int i = 0; i < NUM_LEDS; i++) {
 
     leds[i] = CRGB (
-      change_red,
+      50,
       change_green,
-      change_blue
+      50
       );
       
     change_red += diffrence_in_color;
@@ -344,6 +319,22 @@ void set_color_and_progress(int pot_index, double progress) {
   } 
   FastLED.show();
 }
+
+void set_octave(int pot_value) { 
+
+      int choose_midi_not = 24 + ((8 * pot_value) / 1023) * 12; 
+
+      //Serial.println(choose_midi_note);
+      for(int k = 0; k < ROWS; k++) {
+        for(int n = 0; n < COLS; n++) {
+          keys[k][n] = choose_midi_note;
+          // Serial.println(keys[k][n]);
+          choose_midi_note++;
+        }
+      }
+      Serial.println();
+    }
+
 
 
 
