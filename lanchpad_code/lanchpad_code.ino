@@ -15,17 +15,82 @@
 using namespace admux;
 
 #define MAX_NOTES 12
-#define MAJOR_NAT 'M'
+#define MAJOR 'M'
 #define MINOR_NAT 'm'
 #define MINOR_HAR 'n'
 #define PENTATONIC 'p'
 #define CHROMATIC 'c'
 
 int notes[MAX_NOTES];
-int first_note = 60; //middle c
+int tonic_note = 60; //middle c
 char tonality = 'n'; //Natural minor scale
+int base_velocity = 100;
+int base_channel = 0;
 
 unsigned long time;
+unsigned long start_time;
+unsigned long end_time;
+
+  int minor_chord[] = {0, 3, 7};
+  int major_chord[] = {0, 4, 7};
+  int half_dim_chord[] = {0, 3, 6};
+
+// struct scale {
+//   char s_tonality;
+//   byte s_tonic_note;
+
+//   byte notes[7];
+//   int notes_gravity[7];
+
+
+// };
+
+class scale {
+  char s_tonality;
+  byte s_tonic;
+
+  byte notes[7];
+  int notes_gravity[7];
+
+  public: scale(char s_tonality, byte s_tonic) {
+
+    this -> s_tonality = s_tonality;
+    this -> s_tonic = s_tonic;
+
+    switch (s_tonality) {
+      case 'M':
+      notes[0] = 0; notes[1] = 2;
+      notes[2] = 4; notes[3] = 5; 
+      notes[4] = 7; notes[5] = 9;
+      notes[6] = 11;
+      break;
+    case 'n':
+      notes[0] = 0; notes[1] = 2;
+      notes[2] = 3; notes[3] = 5;
+      notes[4] = 7; notes[5] = 8;
+      notes[6] = 10;
+      break;
+    default:
+      notes[0] = 0; notes[1] = 2; 
+      notes[2] = 3; notes[3] = 5;
+      notes[4] = 7; notes[5] = 8;
+      notes[6] = 11;
+      break;
+    }
+
+  }
+
+};
+
+struct midi_signal {
+	uint8_t header;
+	uint8_t byte1;
+	uint8_t byte2;
+	uint8_t byte3;
+  unsigned long time;
+}; 
+
+midi_signal midi_signals[100];
 
 //Mux mux(Pinset(5, 6, 7));
 
@@ -86,6 +151,7 @@ potentiometer potentiometers[number_of_pot];
 void noteOn(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOn);
+  //Serial.println(pitch);
 }
 
 void noteOff(byte channel, byte pitch, byte velocity) {
@@ -102,10 +168,10 @@ void setup() {
   for(int i = 0; i < number_of_pot; i++) potentiometers[i].mux_channel = i;
   
   potentiometers[0].control_number = 1;   //modulation
-  potentiometers[1].control_number = 7;   //volume
+  potentiometers[1].control_number = 2;   //random
   potentiometers[2].control_number = 10;  //pan
   potentiometers[3].control_number = 74;  //brigthness
-  potentiometers[4].control_number = 2;   //random
+  potentiometers[4].control_number = 8;   //volume
   potentiometers[5].control_number = 3;  //random
   potentiometers[6].control_number = 4;  //random
 
@@ -123,25 +189,13 @@ int value;
 int control_number;
 int channel;
 int acceptance_rate = 20; //value on potentiometer that need to
-                          //be changed to call potentiometers functions
+                          //be changed to send midi command
 
 
 void loop() {
-  midiEventPacket_t rx;
-  do {
-    rx = MidiUSB.read();
-    if (rx.header != 0) {
-      Serial.print("Received: ");
-      Serial.print(rx.header, HEX);
-      Serial.print("-");
-      Serial.print(rx.byte1, HEX);
-      Serial.print("-");
-      Serial.print(rx.byte2, HEX);
-      Serial.print("-");
-      Serial.println(rx.byte3, HEX);
+  //midi_reading();
 
-    }
-  } while (rx.header != 0);
+  
   //controloing potentiometers
   for(byte i = 0; i < number_of_pot; i++) {
     
@@ -180,23 +234,43 @@ void loop() {
     
     if(i == 2) {
       int temp_note = value / 8;
-      if(temp_note > 20 && temp_note <= 103) first_note = temp_note;
-      //Serial.println(first_note);
+      if(temp_note > 20 && temp_note <= 103) tonic_note = temp_note;
+      //Serial.println(tonic_note);
     }
 
     if( i == 1) {
-      if(value < 200) set_scale_and_tonality(first_note, MINOR_NAT);
-      else if(value < 400) set_scale_and_tonality(first_note, MINOR_HAR);
-      else if(value < 600) set_scale_and_tonality(first_note, MAJOR_NAT);
-      else if(value < 800) set_scale_and_tonality(first_note, PENTATONIC);
-      else if(value >= 800) set_scale_and_tonality(first_note, CHROMATIC);
+      if(value < 200) set_scale_and_tonality(tonic_note, MINOR_NAT);
+      else if(value < 400) set_scale_and_tonality(tonic_note, MINOR_HAR);
+      else if(value < 600) set_scale_and_tonality(tonic_note, MAJOR);
+      else if(value < 800) set_scale_and_tonality(tonic_note, PENTATONIC);
+      else if(value >= 800) set_scale_and_tonality(tonic_note, CHROMATIC);
     }
+
 
   }
 
   // if(potentiometers[0].value < 10 && potentiometers[1].value < 10 ) auto_mode(true);
   // else auto_mode(false);
 
+  // set_scale_and_tonality(60, MAJOR);
+
+  // int chords_number = 4;
+  // int chord_notes = 3;
+
+  // int chords[chords_number][chord_notes] = {{0, 4, 7}, {0, 5, 9}, {0, 4, 7}, {0, 5, 9}};
+  // for(int i = 0; i < chords_number; i++) {
+
+  //   for(int j = 0; j < chord_notes; j++) {
+  //       chords[i][j] += (tonic_note);
+  //     noteOn(0, chords[i][j], 100);
+  //     }
+  //   for(int j = 0; j < chord_notes; j++) noteOff(0, chords[i][j], 100);
+  // }
+
+  // play_chord(1, 'm', 0);
+  // delay(1000);
+  // play_chord(0, 'm', 0);
+  //auto_mode(true);
   //Serial.println("");
 
   //delay(1000);
@@ -271,7 +345,7 @@ void start_leds() {
     change_green += diffrence_in_color;
     change_blue += diffrence_in_color;
     FastLED.show();
-    delay(200);
+    delay(100);
   }
   
 }
@@ -367,7 +441,7 @@ void set_octave(int pot_value) {
 //tonality m = minor natural
 //tonality M = major natural
 //tonality p = pentatonic
-void set_scale_and_tonality(int first_note, char tonality) {
+void set_scale_and_tonality(int tonic_note, char tonality) {
   
   for(int i = 0; i < MAX_NOTES; i++) notes[i] = -1;
   switch(tonality) {
@@ -409,6 +483,7 @@ void set_scale_and_tonality(int first_note, char tonality) {
       for(int i = 0; i < MAX_NOTES; i++) notes[i] = i;      
       break;
     default:
+      for(int i = 0; i < MAX_NOTES; i++) notes[i] = i;      
       break;
 
   }
@@ -417,9 +492,9 @@ void set_scale_and_tonality(int first_note, char tonality) {
     if(notes[i] != -1) count_notes++;
   
   // for(int i = 0; i < count_notes; i++) {
-  //   noteOn(0, first_note + notes[i], 99);
+  //   noteOn(0, tonic_note + notes[i], 99);
   //   delay(500);
-  //   noteOff(0, first_note + notes[i], 99);
+  //   noteOff(0, tonic_note + notes[i], 99);
   //   delay(500);
   //   MidiUSB.flush();
   // }
@@ -433,15 +508,15 @@ void set_scale_and_tonality(int first_note, char tonality) {
     }
     Serial.println();
 
-    Serial.println("First note + tonality:"),
-    Serial.print(first_note), Serial.println(tonality);
+    Serial.println("tonic note + tonality:"),
+    Serial.print(tonic_note), Serial.println(tonality);
 
   
     int note_index = 0;
     int octave = 0;  
     for(int k = 0; k < ROWS; k++) {
       for(int n = 0; n < COLS; n++) {
-        int acc_note = first_note;
+        int acc_note = tonic_note;
  
         acc_note += notes[note_index] + (12*octave);
 
@@ -459,56 +534,89 @@ void set_scale_and_tonality(int first_note, char tonality) {
         // Serial.println(octave);
     }
   Serial.println();
+
+  //TO DO
+  // int *temp_notes = new int[count_notes];
+  // int *ptr;
+
+  // for(int i = 0; i < count_notes; i++) temp_notes[i] = notes[i];
+  // notes = realloc( *notes, count_notes * sizeof(int));
+
+  //   for(int i = 0; i < count_notes; i++) notes[i] = temp_notes[i];
+
+  //   free(notes);
+
+
+
+  // delete[] notes; 
+  // notes = temp_notes;
+
 }
 
 void auto_mode(bool on) {
+
+  if(on == false) return 0;
+
+  set_scale_and_tonality(60, MAJOR);
+
+  scale a_min_har('m', 57);
+
   int chords_number = 4;
-  int chord_on_time = 900; //time in ms
-  int chords_break_time = 10; //time in ms
+  int chord_notes = 3;
+  int chord_time = 1000; //time in ms
+  int chords_break_time = 1000; //time in ms
   
-  int minor_chord[3] = {0, 4, 7};
-  int major_chord[3] = {0, 3, 7};
-  int half_dim_chord[3] = {0, 3, 6};
 
   // unsigned int start_time = millis();
   // unsigned int end_time = millis() + chord_on_time;
 
   //TO DO | PROPABLY BETTER IS TO USE POINTERS
-  int chords[chords_number][3];
+  int chords[chords_number][chord_notes];
 
   for(int i = 0; i < chords_number; i++) {
 
-    int chord_base = notes[wheel_selection_index(sizeof(notes))];
-    switch(chord_base) {
+    int prime = notes[0];
+
+    Serial.print("chord prime: "), Serial.println(prime);
+    Serial.print("tonic note: "), Serial.println(tonic_note);
+
+
+    switch(prime) {
       case 0: case 5: case 7:
-        for(int j = 0; j < sizeof(major_chord); j++) chords[i][j] = major_chord[j + chord_base + first_note];
+      play_chord(true, 'M', prime);
         break;
       case 2: case 3: case 9:
-        for(int j = 0; j < sizeof(major_chord); j++) chords[i][j] = minor_chord[j + chord_base + first_note];
+      play_chord(true, 'm', prime);
         break;
       case 11:
-        for(int j = 0; j < sizeof(major_chord); j++) chords[i][j] = half_dim_chord[j + chord_base + first_note];
+        play_chord(true, 'd', prime);
         break;
       defalut:
         break;
     }
-  }
 
-  for(int i = 0; i < chords_number; i++) {
 
-    for(int note : chords[i]) {
-      noteOn(0, note, 99);
-      Serial.print(note), Serial.print(" ");
+    Serial.print("Chord: ");
+    for(int j = 0; j < chord_notes; j++) {
+      chords[i][j] += prime + tonic_note;
+      Serial.print(chords[i][j]),
+      Serial.print(" ");
     }
     Serial.println();
-    // delay(chord_on_time);
 
-    for(int note : chords[i]) {
-      noteOff(0, note, 99);
-    }
-    // delay(chords_break_time);
-    delay(1000);
+    start_time = millis();
+    end_time = start_time + chord_time;
+
+
   }
+
+
+  //   for(int j = 0; j < chord_notes; j++) noteOn(0, chords[0][j], 70);
+  //   delay(chord_on_time);
+
+  //   for(int j = 0; j < chord_notes; j++) noteOff(0, chords[0][j], 70);
+  //   delay(chords_break_time);
+  // Serial.println();
 
 
 }
@@ -528,5 +636,79 @@ int wheel_selection_index(int size) {
 
       if(random_number <= cumulative_sum) return i;
   }
+
+}
+
+//ch_symbol = chord symbol, ch_notes = chord_notes which means, what notes are in chord 
+//length is in milliseconds
+void play_chord(bool on, char ch_symbol, int prime) {
+
+  int size = 3;
+  int chord[size];
+
+  switch(ch_symbol) {
+    case 'm':
+      for(int i = 0; i < size; i++) chord[i] = minor_chord[i];
+      break;
+    case 'M':
+      for(int i = 0; i < size; i++) chord[i] = major_chord[i];
+      break;
+    case 'd':
+      for(int i = 0; i < size; i++) chord[i] = half_dim_chord[i];
+      break;
+    default:
+      break;
+  }
+  for(int i = 0; i < size; i++) chord[i] += (prime + tonic_note);
+
+  Serial.print("chord state: "), Serial.println(on);
+  Serial.print("chord: ");
+
+  if(on == true) 
+    for(int note : chord) {
+      Serial.print(note), Serial.print(" ");
+      noteOn(base_channel, note, base_velocity);
+    }
+  else for(int note : chord) noteOff(base_channel, note, base_velocity);
+
+  Serial.println();
+
+}
+
+void midi_reading() {
+
+  unsigned long start_midi_reading = millis();
+
+  int index = 0;
+
+  midiEventPacket_t rx;
+    do {
+      rx = MidiUSB.read();
+      if (rx.header != 0 && rx.byte1 >= 128 && rx.byte1 < 160) {
+        
+        midi_signals[index].header = rx.header;
+        midi_signals[index].byte1 = rx.byte1;
+        midi_signals[index].byte2 = rx.byte2;
+        midi_signals[index].byte3 = rx.byte3;
+        midi_signals[index].time = millis() - start_midi_reading;
+        index++;
+      }
+    } while (millis() - start_midi_reading < 10000);
+
+    for(midi_signal signal : midi_signals) {
+
+        Serial.print("Stored: ");
+        Serial.print(signal.header, OCT);
+        Serial.print("-");
+        Serial.print(signal.byte1, OCT);
+        Serial.print("-");
+        Serial.print(signal.byte2, OCT);
+        Serial.print("-");
+        Serial.print(signal.byte3, OCT);
+        Serial.print("---");
+        Serial.println(signal.time, OCT);
+    }
+
+    delay(5000);
 
 }
