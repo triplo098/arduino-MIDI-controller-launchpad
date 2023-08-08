@@ -37,28 +37,25 @@ class scale {
 
   public:
   char tonality;
-  char pre_tonality;
   byte tonic;
-  byte pre_tonic;
   byte notes[MAX_NOTES];
   byte count_notes = 0;
-  
-
+  byte chord_notes = 1;
 
   scale() {
     
-    for(int i = 0; i < MAX_NOTES; i++) notes[i] = -1;
+    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255; //error message
     tonic = 60;
     tonality = MINOR_HAR;
-
 
     notes[0] = 0; notes[1] = 2;
     notes[2] = 4; notes[3] = 5; 
     notes[4] = 7; notes[5] = 9;
     notes[6] = 11;
+
+    count_notes = 7;
   };
  
-  
   void set_tonic(byte tonic) {
     
     this -> tonic = tonic;
@@ -68,7 +65,7 @@ class scale {
 
     this -> tonality = tonality;
 
-    for(int i = 0; i < MAX_NOTES; i++) notes[i] = -1;
+    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
     switch (tonality) {
     case 'n':
       notes[0] = 0; notes[1] = 2;
@@ -98,8 +95,13 @@ class scale {
       break;
     }
     count_notes = 0;
-    for(int i = 0; i < MAX_NOTES; i++) 
-      if(notes[i] != -1) count_notes++;
+    //Serial.println("Notes: ");
+    for(int i = 0; i < MAX_NOTES; i++) {
+      //Serial.print(" "), Serial.print(notes[i]);
+      if(notes[i] != 255) count_notes++;
+    }
+    
+    //Serial.print("Count notes: "), Serial.println(count_notes);
   }
 
 };
@@ -167,12 +169,13 @@ potentiometer potentiometers[number_of_pot];
 void noteOn(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOn);
-  Serial.println(pitch);
+  //Serial.print("NOTE ON: "), Serial.println(pitch);
 }
 
 void noteOff(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOff);
+  //Serial.print("NOTE OFF: "), Serial.println(pitch);
 }
 
 void setup() {
@@ -207,9 +210,11 @@ int acceptance_rate = 20; //value on potentiometer that need to
                           //be changed to send midi command
 
 bool auto_mode = false;
-bool chord_mode = true;
+bool chord_mode_3 = false;
+bool chord_mode_5 = false;
+bool chord_mode_7 = false;
 bool midi_read_mode = false;
-bool normal_mode = true;
+bool normal_mode = false;
 
 
 
@@ -217,21 +222,19 @@ void loop() {
 
   activate_potentiometers();
 
+  
   if(auto_mode == true) {
-    activate_keypad(1);
     activate_auto_mode();
   }
-  else if(chord_mode == true) { 
-    activate_keypad(3);
-  }
   else if(midi_read_mode == true) {
-    activate_keypad(1);
     midi_reading();
   }
-  
- 
+      
+  activate_keypad();
 
+  
   MidiUSB.flush();
+
   FastLED.show();
 }
 
@@ -265,17 +268,7 @@ void activate_potentiometers() {
     potentiometers[i].pre_value = potentiometers[i].value;
 
     //Special potentiometers features
-    if( i == 3) FastLED.setBrightness(value / 4);
-    //FastLED.setBrightness(potentiometers[i].value / 4);
 
-    
-    if(i == 2) {
-      int temp_note = value / 8;
-      if(temp_note > 20 && temp_note <= 103) {
-        scale.set_tonic(temp_note);
-        notes_to_keypad();
-      }
-    }
 
     if( i == 1) {
       if(value < 200) scale.set_tonality(MINOR_NAT);
@@ -285,35 +278,56 @@ void activate_potentiometers() {
       else if(value >= 800) scale.set_tonality(CHROMATIC);
       notes_to_keypad();
     }
+    
+    if(i == 2) {
+      int temp_note = value / 8;
+      if(temp_note > 20 && temp_note <= 103) {
+        scale.set_tonic(temp_note);
+        notes_to_keypad();
+      }
+    }
 
+    if( i == 3) FastLED.setBrightness(value / 4);
+
+    if( i == 4) {
+
+      byte mode = value / 204 + 1;
+      Serial.print("Mode: "), Serial.println(mode);
+      switch(mode) {
+        case 1: case 2: case 3: case 4:
+          scale.chord_notes = mode;
+          break;
+        case 5: default:
+          scale.chord_notes = 1;
+          scale.set_tonic(36);
+          scale.set_tonality(CHROMATIC);
+          break;
+      }
+      
+    }
   }
 
 }
 
-void activate_keypad(byte play) {
+void set_mode() {
+}
+
+
+void activate_keypad() {
 
   if (kpd.getKeys()) {
     for (int i=0; i < LIST_MAX; i++) {  // Scan the whole key list.
       if ( kpd.key[i].stateChanged ) {  // Only find keys that have changed state.
         int note = 0;
+        byte octave = 0;
         switch (kpd.key[i].kstate) {  // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
           case PRESSED:
             Serial.println(kpd.key[i].kchar);
             
             note = (byte) kpd.key[i].kchar;
-            for(int j = 0; j < scale.count_notes; j++) {
-              if(scale.notes[j] + scale.tonic == note) {
-                for(int k = 0; k < play; k++) noteOn(base_channel, 
-                scale.notes[(j + 2*k) % scale.count_notes] + scale.tonic, base_velocity);
-                break;
-              } 
-            }
 
+            play_chord(true, note);
         
-            
-            Serial.print("Note On ");
-            Serial.println(note);
-
             //set_color_random();
             set_color_ametysth();
             break;
@@ -322,15 +336,9 @@ void activate_keypad(byte play) {
           case RELEASED:
             
             note = (byte) kpd.key[i].kchar;
-            for(int j = 0; j < scale.count_notes; j++) {
-              if(scale.notes[j] + scale.tonic == note) {
-                for(int k = 0; k < play; k++) noteOff(base_channel, 
-                scale.notes[(j + 2*k) % scale.count_notes] + scale.tonic, base_velocity);
-                break;
-              } 
-            }
-            Serial.print("Note Off ");
-            Serial.println(note);
+            
+            play_chord(false, note);
+
             //set_color_black();
             break;
           case IDLE:
@@ -437,6 +445,13 @@ void set_color_and_progress(int pot_index, double progress) {
   
   
 void notes_to_keypad() {
+
+  //Turning all of the notes off
+  for(int i = 0 ; i < ROWS; i++) {
+      for(int j = 0 ; j < COLS; j++) {
+      noteOff(base_channel, (int)keys[i][j], base_velocity);
+    } 
+  }
 
   Serial.print("Tonic: "), Serial.println(scale.tonic);
   Serial.print("Tonality: "), Serial.println(scale.tonality);
@@ -550,38 +565,47 @@ int wheel_selection_index(int size) {
 
 //ch_symbol = chord symbol, ch_notes = chord_notes which means, what notes are in chord 
 //length is in milliseconds
-void play_chord(bool on, char ch_symbol, int prime) {
+void play_chord(bool on, byte prime_note) {
 
-  int size = 3;
-  int chord[size];
+  int chords[scale.chord_notes];
 
-  switch(ch_symbol) {
-    case 'm':
-      for(int i = 0; i < size; i++) chord[i] = minor_chord[i];
-      break;
-    case 'M':
-      for(int i = 0; i < size; i++) chord[i] = major_chord[i];
-      break;
-    case 'd':
-      for(int i = 0; i < size; i++) chord[i] = half_dim_chord[i];
-      break;
-    default:
-      break;
+  byte octave = 0;
+  byte index = 0;
+
+  for(int i = 0; i < 3; i++){
+    for(int j = 0; j < scale.count_notes; j++) {
+      if(prime_note == scale.tonic + scale.notes[j] + (i * 12)) {
+        octave = i;
+        index = j;
+        Serial.print("Note found: "), Serial.println(prime_note);
+        Serial.print("Octave and index: "), Serial.print(octave), Serial.print(" "), Serial.println(index);
+      }
+    }
+  } 
+
+  for(int i = 0; i < scale.chord_notes; i++) {
+    if(index + i * 2 >= scale.count_notes) octave = 1;
+    else if(index + i * 2 >= 2*scale.count_notes) octave = 2;
+    chords[i] = scale.tonic + scale.notes[(index + i * 2) % scale.count_notes] + (12 * octave);
   }
-  for(int i = 0; i < size; i++) chord[i] += (prime + scale.tonic);
 
   Serial.print("chord state: "), Serial.println(on);
   Serial.print("chord: ");
 
-  if(on == true) 
-    for(int note : chord) {
-      Serial.print(note), Serial.print(" ");
+  for(int i = 0; i < scale.chord_notes; i++) {
+    Serial.print(chords[i]), Serial.print(" ");    
+  }
+
+  for(int note : chords) {
+    if(on == true) {
+      //Serial.print(note), Serial.print(" ");            
       noteOn(base_channel, note, base_velocity);
+    } else {
+      //Serial.print(note), Serial.print(" ");            
+      noteOff(base_channel, note, base_velocity);
     }
-  else for(int note : chord) noteOff(base_channel, note, base_velocity);
-
+  }
   Serial.println();
-
 }
 
 void midi_reading() {
@@ -618,6 +642,5 @@ void midi_reading() {
         Serial.println(signal.time, OCT);
     }
 
-    delay(5000);
 
 }
