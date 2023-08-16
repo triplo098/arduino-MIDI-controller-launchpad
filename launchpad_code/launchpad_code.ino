@@ -315,9 +315,13 @@ void set_mode() {
 
 void activate_keypad() {
 
+  bool key_active = false;
+
+  //snippet of code from examples from Keypad library repository
   if (kpd.getKeys()) {
     for (int i=0; i < LIST_MAX; i++) {  // Scan the whole key list.
-      if ( kpd.key[i].stateChanged ) {  // Only find keys that have changed state.
+      if ( kpd.key[i].stateChanged ) {
+        key_active = true;  // Only find keys that have changed state.
         int note = 0;
         byte octave = 0;
         switch (kpd.key[i].kstate) {  // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
@@ -340,14 +344,17 @@ void activate_keypad() {
             play_chord(false, note);
 
             //set_color_black();
+            set_color_red();
             break;
           case IDLE:
             break;
         }
         Serial.print(kpd.key[i].kchar);
       }
+      
     }
   }
+      //if(key_active == false) clean_midi();
 }
 
 void start_leds() {
@@ -376,6 +383,10 @@ void set_color_ametysth() {
 
 void set_color_black() {
   for(int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
+}
+
+void set_color_red() {
+  for(int i = 0; i < NUM_LEDS; i++) leds[i].setRGB(233,150,122);
 }
 
 
@@ -448,11 +459,12 @@ void notes_to_keypad() {
 
   //Turning all of the notes off
   for(int i = 0 ; i < ROWS; i++) {
-      for(int j = 0 ; j < COLS; j++) {
+    for(int j = 0 ; j < COLS; j++) {
       noteOff(base_channel, (int)keys[i][j], base_velocity);
     } 
   }
 
+  
   Serial.print("Tonic: "), Serial.println(scale.tonic);
   Serial.print("Tonality: "), Serial.println(scale.tonality);
 
@@ -533,16 +545,21 @@ void activate_auto_mode() {
   //   Serial.println();
   // }
 
-for(int i = 0; i < chords_number; i ++) {
+  for(int i = 0; i < chords_number; i ++) {
 
-    for(int j = 0; j < chord_notes; j++) noteOn(0, chords[i][j], base_velocity);
-    delay(chord_time);
+      for(int j = 0; j < chord_notes; j++) noteOn(0, chords[i][j], base_velocity);
+      delay(chord_time);
 
-    for(int j = 0; j < chord_notes; j++) noteOff(0, chords[i][j], base_velocity);
-    delay(chords_break_time);
+      for(int j = 0; j < chord_notes; j++) noteOff(0, chords[i][j], base_velocity);
+      delay(chords_break_time);
+  }
+
+
 }
 
-
+void clean_midi() {
+  //Turning all of the notes off
+    for(int i = 0 ; i < 256; i++) noteOff(base_channel, i, base_velocity);
 }
 
 
