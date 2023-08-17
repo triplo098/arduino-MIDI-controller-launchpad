@@ -1,7 +1,4 @@
-/*
-  pot = potentiometers
 
-*/
 
 #include "MIDIUSB.h"
 
@@ -24,9 +21,9 @@ using namespace admux;
 int base_velocity = 100;
 int base_channel = 0;
 
-unsigned long time;
-unsigned long start_time;
-unsigned long end_time;
+unsigned long time = 0;
+unsigned long start_time = 0;
+unsigned long end_time = 0;
 
 int minor_chord[] = {0, 3, 7};
 int major_chord[] = {0, 4, 7};
@@ -134,12 +131,8 @@ CRGB leds[NUM_LEDS];
 const byte ROWS = 4;
 const byte COLS = 4;
 
-char keys[ROWS][COLS] = {
-  {'<','=','>', '?'},
-  {'@','A','B', 'C'},
-  {'D','E','F', 'G'},
-  {'H','I','J', 'K'}
-};
+char keys[ROWS][COLS];
+
 
 byte rowPins[ROWS] = {5, 4, 3, 2};
 byte colPins[COLS] = {9, 8, 7, 6}; 
@@ -209,36 +202,30 @@ int channel;
 int acceptance_rate = 20; //value on potentiometer that need to
                           //be changed to send midi command
 
-bool auto_mode = false;
-bool chord_mode_3 = false;
-bool chord_mode_5 = false;
-bool chord_mode_7 = false;
-bool midi_read_mode = false;
-bool normal_mode = false;
 
+// 0 = setup_mode
+// 1 = normal_mode
+// 2 = auto_mode
+int mode = 0;
 
 
 void loop() {
 
-  activate_potentiometers();
+  activate_potentiometers(mode);
 
   
-  if(auto_mode == true) {
-    activate_auto_mode();
-  }
-  else if(midi_read_mode == true) {
-    midi_reading();
-  }
+  // if(mode == 2) {
+  //   activate_auto_mode();
+  // }
+  
       
-  activate_keypad();
-
-  
+  activate_keypad(mode);
   MidiUSB.flush();
-
   FastLED.show();
 }
 
-void activate_potentiometers() {
+void activate_potentiometers(int mode) {
+  
   for(byte i = 0; i < number_of_pot; i++) {
     
     if(i == 0) continue;
@@ -254,22 +241,23 @@ void activate_potentiometers() {
     if( potentiometers[i].value < potentiometers[i].pre_value + acceptance_rate
     && potentiometers[i].value > potentiometers[i].pre_value - acceptance_rate ) continue; 
   
-    //printing to serial and testing
-    //Serial.print("Pot: "); Serial.print(i); Serial.print(" - "); Serial.println(value);
-
-    //set_color_random(); 
+    
     //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
     //set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); 
     set_color_and_progress(i, 1.0); 
 
-    //Sending midi control change
-    controlChange(channel, control_number, value / 8);
-    
     potentiometers[i].pre_value = potentiometers[i].value;
+    
+    
+    if( i == 3) FastLED.setBrightness(value / 4);
 
-    //Special potentiometers features
+    //Sending midi control change
+    if(mode == 1) {
+      controlChange(channel, control_number, value / 8);
+      continue;
+    }
 
-
+    //Setting up parameters such as tonality, tonic, octave with potentiometers    
     if( i == 1) {
       if(value < 200) scale.set_tonality(MINOR_NAT);
       else if(value < 400) scale.set_tonality(MINOR_HAR);
@@ -287,45 +275,60 @@ void activate_potentiometers() {
       }
     }
 
-    if( i == 3) FastLED.setBrightness(value / 4);
-
     if( i == 4) {
 
-      byte mode = value / 204 + 1;
+      byte mode = (value / 256) + 1;
       Serial.print("Mode: "), Serial.println(mode);
       switch(mode) {
         case 1: case 2: case 3: case 4:
           scale.chord_notes = mode;
           break;
-        case 5: default:
+        default:
           scale.chord_notes = 1;
-          scale.set_tonic(36);
-          scale.set_tonality(CHROMATIC);
+          // scale.chord_notes = 1;
+          // scale.set_tonic(36);
+          // scale.set_tonality(CHROMATIC);
           break;
       }
       
     }
+
+    if(i == 5) {
+
+      int octave = (value / 127);
+      int temp_note = (octave * 12) + (scale.tonic % 12);
+      if(temp_note > 20 && temp_note <= 103) {
+        scale.set_tonic(temp_note);
+        notes_to_keypad();
+      }
+    }
+
   }
 
 }
 
-void set_mode() {
-}
 
-
-void activate_keypad() {
+void activate_keypad(int &mode) {
 
   bool key_active = false;
 
   //snippet of code from examples from Keypad library repository
   if (kpd.getKeys()) {
-    for (int i=0; i < LIST_MAX; i++) {  // Scan the whole key list.
+    
+    for (int i = 0; i < LIST_MAX; i++) {  // Scan the whole key list.
+       
       if ( kpd.key[i].stateChanged ) {
+
         key_active = true;  // Only find keys that have changed state.
         int note = 0;
         byte octave = 0;
-        switch (kpd.key[i].kstate) {  // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
+        switch (kpd.key[i].kstate) {  
+
+          // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
           case PRESSED:
+
+            if(kpd.key[i].kchar == keys[3][3]) start_time = millis();
+            
             Serial.println(kpd.key[i].kchar);
             
             note = (byte) kpd.key[i].kchar;
@@ -338,7 +341,9 @@ void activate_keypad() {
           case HOLD:
             break;
           case RELEASED:
-            
+
+            if(kpd.key[i].kchar == keys[3][3]) start_time = 0;
+ 
             note = (byte) kpd.key[i].kchar;
             
             play_chord(false, note);
@@ -353,6 +358,15 @@ void activate_keypad() {
       }
       
     }
+  }
+
+  if((millis() - start_time > 3000) && start_time != 0) {
+    
+    mode++;
+    Serial.print("changing mode before: "), Serial.println(mode);
+    mode %= 3; 
+    Serial.print("changing mode after: "), Serial.println(mode);
+    start_time = 0;
   }
       //if(key_active == false) clean_midi();
 }
@@ -457,7 +471,7 @@ void set_color_and_progress(int pot_index, double progress) {
   
 void notes_to_keypad() {
 
-  //Turning all of the notes off
+  //Turning off all of the notes
   for(int i = 0 ; i < ROWS; i++) {
     for(int j = 0 ; j < COLS; j++) {
       noteOff(base_channel, (int)keys[i][j], base_velocity);
