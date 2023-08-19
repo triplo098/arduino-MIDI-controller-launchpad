@@ -126,6 +126,9 @@ Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(15, 14, 16));
 #define NUM_LEDS 16
 
 CRGB leds[NUM_LEDS];
+CRGB leds_layer[NUM_LEDS];
+
+byte current_pot_index;
 
 //preparing keypad
 const byte ROWS = 4;
@@ -171,6 +174,27 @@ void noteOff(byte channel, byte pitch, byte velocity) {
   //Serial.print("NOTE OFF: "), Serial.println(pitch);
 }
 
+void controlChange(byte channel, byte control, byte value) {
+  midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
+  MidiUSB.sendMIDI(event);
+}
+
+int mux_channel;
+int pre_value;
+int value;
+int control_number;
+int channel;
+int acceptance_rate = 20; //value on potentiometer that need to
+                          //be changed to send midi command
+
+#define SETUP_MODE 0
+#define NORMAL_MODE 1
+#define AUTO_MODE 2
+
+int mode = NORMAL_MODE;
+
+byte change_mode_count = 0;
+
 void setup() {
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS); 
   FastLED.setBrightness(100);
@@ -186,38 +210,18 @@ void setup() {
   potentiometers[4].control_number = 8;   //volume
   potentiometers[5].control_number = 3;  //random
   potentiometers[6].control_number = 4;  //random
+
   
 }
 
-void controlChange(byte channel, byte control, byte value) {
-  midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
-  MidiUSB.sendMIDI(event);
-}
-
-int mux_channel;
-int pre_value;
-int value;
-int control_number;
-int channel;
-int acceptance_rate = 20; //value on potentiometer that need to
-                          //be changed to send midi command
-
-
-// 0 = setup_mode
-// 1 = normal_mode
-// 2 = auto_mode
-int mode = 0;
 
 
 void loop() {
 
-  activate_potentiometers(mode);
 
-  
-  // if(mode == 2) {
-  //   activate_auto_mode();
-  // }
-  
+  //midi_reading();
+
+  activate_potentiometers(mode);
       
   activate_keypad(mode);
   MidiUSB.flush();
@@ -241,10 +245,10 @@ void activate_potentiometers(int mode) {
     if( potentiometers[i].value < potentiometers[i].pre_value + acceptance_rate
     && potentiometers[i].value > potentiometers[i].pre_value - acceptance_rate ) continue; 
   
-    
+
     //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
     //set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); 
-    set_color_and_progress(i, 1.0); 
+    if(mode == NORMAL_MODE) set_color_and_progress(i, value / 1023.0); 
 
     potentiometers[i].pre_value = potentiometers[i].value;
     
@@ -252,7 +256,7 @@ void activate_potentiometers(int mode) {
     if( i == 3) FastLED.setBrightness(value / 4);
 
     //Sending midi control change
-    if(mode == 1) {
+    if(mode == NORMAL_MODE) {
       controlChange(channel, control_number, value / 8);
       continue;
     }
@@ -276,25 +280,21 @@ void activate_potentiometers(int mode) {
     }
 
     if( i == 4) {
-
-      byte mode = (value / 256) + 1;
-      Serial.print("Mode: "), Serial.println(mode);
-      switch(mode) {
+      byte chord_mode = (value / 256) + 1;
+      Serial.print("Mode: "), Serial.println(chord_mode);
+      switch(chord_mode) {
         case 1: case 2: case 3: case 4:
-          scale.chord_notes = mode;
+          scale.chord_notes = chord_mode;
           break;
         default:
           scale.chord_notes = 1;
-          // scale.chord_notes = 1;
-          // scale.set_tonic(36);
-          // scale.set_tonality(CHROMATIC);
           break;
       }
+
       
     }
 
     if(i == 5) {
-
       int octave = (value / 127);
       int temp_note = (octave * 12) + (scale.tonic % 12);
       if(temp_note > 20 && temp_note <= 103) {
@@ -327,7 +327,14 @@ void activate_keypad(int &mode) {
           // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
           case PRESSED:
 
-            if(kpd.key[i].kchar == keys[3][3]) start_time = millis();
+            if(kpd.key[i].kchar == keys[3][3]) change_mode_count++;
+            else if(kpd.key[i].kchar == keys[3][0]) change_mode_count++;
+
+            if(change_mode_count == 2) {
+              start_time = millis();
+              break;
+            } 
+            // else if(change_mode_count == 1) break;
             
             Serial.println(kpd.key[i].kchar);
             
@@ -342,9 +349,14 @@ void activate_keypad(int &mode) {
             break;
           case RELEASED:
 
-            if(kpd.key[i].kchar == keys[3][3]) start_time = 0;
- 
+
+            if(kpd.key[i].kchar == keys[3][3] 
+            || kpd.key[i].kchar == keys[3][0]) change_mode_count = 0;
+
+            if(change_mode_count < 2) start_time = 0;
+            
             note = (byte) kpd.key[i].kchar;
+
             
             play_chord(false, note);
 
@@ -360,35 +372,44 @@ void activate_keypad(int &mode) {
     }
   }
 
-  if((millis() - start_time > 3000) && start_time != 0) {
+  if((millis() - start_time > 2000) && start_time != 0) {
     
     mode++;
-    Serial.print("changing mode before: "), Serial.println(mode);
-    mode %= 3; 
-    Serial.print("changing mode after: "), Serial.println(mode);
+    mode %= 2;
     start_time = 0;
+
+    Serial.print("Mode: "), Serial.println(mode);
   }
       //if(key_active == false) clean_midi();
 }
 
 void start_leds() {
 
-  int change_red = 0;
-  int change_green = 0;
-  int change_blue = 0;
-
-  int diffrence_in_color = 31;
-  for(int i = 0; i < NUM_LEDS; i++) {
-
-    leds[i] = CRGB (50, change_green, 50);
-      
-    change_red += diffrence_in_color;
-    change_green += diffrence_in_color;
-    change_blue += diffrence_in_color;
-    FastLED.show();
-    delay(100);
-  }
+  unsigned long starting_time = millis();
+  byte brightness = 255;
+  byte start_index = 0;
   
+  do {
+    byte color_index = start_index;
+
+    for( int i = 0; i < NUM_LEDS; ++i) {
+
+      leds[i] = ColorFromPalette(RainbowStripeColors_p, color_index, brightness, LINEARBLEND);
+      color_index += 2;
+    }
+    FastLED.show();
+    delay(10);
+    Serial.println(start_index);
+    start_index++;
+
+  }
+  while(millis() - starting_time < 2000);
+}
+
+//TO DO
+void key_animation(bool on) {
+  
+
 }
 
 void set_color_ametysth() {
@@ -411,64 +432,49 @@ void set_color_and_progress(int pot_index, double progress) {
   uint8_t green = 0;
   uint8_t blue = 0;
 
+  //for(int i = 0; i < NUM_LEDS; i++) leds_layer[i] = leds[i];
+
   switch(pot_index) {
     case 0: 
       //pink
-      red = 183;
-      green = 28;
-      blue = 28;
+      red = 183; green = 28; blue = 28;
       break;
     case 1: 
       //light violet
-      red = 69;
-      green = 39;
-      blue = 160;
+      red = 69; green = 39; blue = 160;
       break;
     case 2: 
       //light cyan
-      red = 67;
-      green = 160;
-      blue = 71;
+      red = 67; green = 160; blue = 71;
       break;
     case 3: 
       //orange
-      red = 245;
-      green = 127;
-      blue = 23;
+      red = 245; green = 127; blue = 23;
       break;
     case 4: 
       //red brown
-      red = 191;
-      green = 54;
-      blue = 12;
+      red = 191; green = 54; blue = 12;
       break;
     // case 5: 
     //   //dark grey
-    //   red = 93;
-    //   green = 64;
-    //   blue = 55;
+    //   red = 93; green = 64; blue = 55;
     //   break;
     case 6: 
       //green
-      red = 20;
-      green = 230;
-      blue = 20;
+      red = 20; green = 230; blue = 20;
       break;
     default:
-      red = 150;
-      green = 64;
-      blue = 210;
+      red = 150; green = 64; blue = 210;
     break;
   }
+
+  set_color_black();
 
   for(int i = 0; i < num_of_leds_on; i++) {
     leds[i].setRGB(red, green, blue);
   } 
-  FastLED.show();
 }
 
-  
-  
 void notes_to_keypad() {
 
   //Turning off all of the notes
@@ -646,32 +652,61 @@ void midi_reading() {
   int index = 0;
 
   midiEventPacket_t rx;
-    do {
-      rx = MidiUSB.read();
-      if (rx.header != 0 && rx.byte1 >= 128 && rx.byte1 < 160) {
+    // do {
+    //   rx = MidiUSB.read();
+    //   if (rx.header != 0) {
         
-        midi_signals[index].header = rx.header;
-        midi_signals[index].byte1 = rx.byte1;
-        midi_signals[index].byte2 = rx.byte2;
-        midi_signals[index].byte3 = rx.byte3;
-        midi_signals[index].time = millis() - start_midi_reading;
-        index++;
-      }
-    } while (millis() - start_midi_reading < 10000);
+        // midi_signals[index].header = rx.header;
+        // midi_signals[index].byte1 = rx.byte1;
+        // midi_signals[index].byte2 = rx.byte2;
+        // midi_signals[index].byte3 = rx.byte3;
+        // midi_signals[index].time = millis() - start_midi_reading;
 
-    for(midi_signal signal : midi_signals) {
+    //     Serial.print(rx.header), Serial.print("-"), Serial.print(rx.byte1), Serial.print("-");
+    //     Serial.print(rx.byte2), Serial.print("-"), Serial.print(rx.byte3), Serial.print("-");
+    //     Serial.println(midi_signals[index].time);
+    //     index++;
+    //   }
+    // } while (index < 100 && rx.header != 0);
 
-        Serial.print("Stored: ");
-        Serial.print(signal.header, OCT);
-        Serial.print("-");
-        Serial.print(signal.byte1, OCT);
-        Serial.print("-");
-        Serial.print(signal.byte2, OCT);
-        Serial.print("-");
-        Serial.print(signal.byte3, OCT);
-        Serial.print("---");
-        Serial.println(signal.time, OCT);
+    do {
+    rx = MidiUSB.read();
+    if (rx.header != 0) {
+
+      midi_signals[index].header = rx.header;
+      midi_signals[index].byte1 = rx.byte1;
+      midi_signals[index].byte2 = rx.byte2;
+      midi_signals[index].byte3 = rx.byte3;
+      midi_signals[index].time = millis() - start_midi_reading;
+
+      Serial.print("Received: ");
+      Serial.print(rx.header, HEX);
+      Serial.print("-");
+      Serial.print(rx.byte1, HEX);
+      Serial.print("-");
+      Serial.print(rx.byte2, HEX);
+      Serial.print("-");
+      Serial.println(rx.byte3, HEX);
+
+      index++;
     }
+  } while (rx.header != 0);
+    // } while (millis() - start_midi_reading < 10000);
+
+    // for(midi_signal signal : midi_signals) {
+
+    //     Serial.print("Stored: ");
+    //     Serial.print(signal.header, OCT);
+    //     Serial.print("-");
+    //     Serial.print(signal.byte1, OCT);
+    //     Serial.print("-");
+    //     Serial.print(signal.byte2, OCT);
+    //     Serial.print("-");
+    //     Serial.print(signal.byte3, OCT);
+    //     Serial.print("---");
+    //     Serial.println(signal.time, OCT);
+    // }
+
 
 
 }
