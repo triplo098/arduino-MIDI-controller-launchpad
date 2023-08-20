@@ -22,7 +22,9 @@ int base_velocity = 100;
 int base_channel = 0;
 
 unsigned long time = 0;
-unsigned long start_time = 0;
+unsigned long keys_hold_time = 0;
+unsigned long leds_timer = 0;
+
 unsigned long end_time = 0;
 
 int minor_chord[] = {0, 3, 7};
@@ -105,8 +107,6 @@ class scale {
 
 scale scale;
 
-
-
 struct midi_signal {
 	uint8_t header;
 	uint8_t byte1;
@@ -124,9 +124,14 @@ Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(15, 14, 16));
 
 #define LED_PIN 10
 #define NUM_LEDS 16
+int updates_per_second = 50;
 
 CRGB leds[NUM_LEDS];
 CRGB leds_layer[NUM_LEDS];
+
+CRGBPalette16 leds_palette;
+TBlendType leds_blend;
+
 
 byte current_pot_index;
 
@@ -191,13 +196,16 @@ int acceptance_rate = 20; //value on potentiometer that need to
 #define NORMAL_MODE 1
 #define AUTO_MODE 2
 
-int mode = NORMAL_MODE;
+byte mode = NORMAL_MODE;
 
 byte change_mode_count = 0;
 
 void setup() {
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS); 
   FastLED.setBrightness(100);
+
+  leds_palette = RainbowStripeColors_p;
+  leds_blend = LINEARBLEND;
 
   start_leds();
 
@@ -211,6 +219,9 @@ void setup() {
   potentiometers[5].control_number = 3;  //random
   potentiometers[6].control_number = 4;  //random
 
+  leds_timer = millis();
+
+  set_color_palette(mode);
   
 }
 
@@ -219,16 +230,26 @@ void setup() {
 void loop() {
 
 
+  static byte start_index = 0;
+
   //midi_reading();
 
   activate_potentiometers(mode);
       
   activate_keypad(mode);
   MidiUSB.flush();
-  FastLED.show();
+
+
+  if((millis() - leds_timer) > (1000 / updates_per_second)) {
+
+    fill_leds_palette(start_index);
+    FastLED.show();
+    start_index++;
+    leds_timer = millis();
+  }
 }
 
-void activate_potentiometers(int mode) {
+void activate_potentiometers(byte mode) {
   
   for(byte i = 0; i < number_of_pot; i++) {
     
@@ -248,8 +269,9 @@ void activate_potentiometers(int mode) {
 
     //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
     //set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); 
-    if(mode == NORMAL_MODE) set_color_and_progress(i, value / 1023.0); 
-
+    if(mode == NORMAL_MODE) {
+      //set_color_and_progress(i, value / 1023.0); 
+    }
     potentiometers[i].pre_value = potentiometers[i].value;
     
     
@@ -303,12 +325,14 @@ void activate_potentiometers(int mode) {
       }
     }
 
+    if(i == 6) updates_per_second = value / 4;
+
   }
 
 }
 
 
-void activate_keypad(int &mode) {
+void activate_keypad(byte &mode) {
 
   bool key_active = false;
 
@@ -319,7 +343,7 @@ void activate_keypad(int &mode) {
        
       if ( kpd.key[i].stateChanged ) {
 
-        key_active = true;  // Only find keys that have changed state.
+        // Only find keys that have changed state.
         int note = 0;
         byte octave = 0;
         switch (kpd.key[i].kstate) {  
@@ -331,7 +355,7 @@ void activate_keypad(int &mode) {
             else if(kpd.key[i].kchar == keys[3][0]) change_mode_count++;
 
             if(change_mode_count == 2) {
-              start_time = millis();
+              keys_hold_time = millis();
               break;
             } 
             // else if(change_mode_count == 1) break;
@@ -342,10 +366,10 @@ void activate_keypad(int &mode) {
 
             play_chord(true, note);
         
-            //set_color_random();
-            set_color_ametysth();
+            leds_palette = LavaColors_p;
             break;
           case HOLD:
+          key_active = true;
             break;
           case RELEASED:
 
@@ -353,15 +377,14 @@ void activate_keypad(int &mode) {
             if(kpd.key[i].kchar == keys[3][3] 
             || kpd.key[i].kchar == keys[3][0]) change_mode_count = 0;
 
-            if(change_mode_count < 2) start_time = 0;
+            if(change_mode_count < 2) keys_hold_time = 0;
             
             note = (byte) kpd.key[i].kchar;
 
             
             play_chord(false, note);
 
-            //set_color_black();
-            set_color_red();
+            if(key_active == false) set_color_palette(mode);
             break;
           case IDLE:
             break;
@@ -372,11 +395,11 @@ void activate_keypad(int &mode) {
     }
   }
 
-  if((millis() - start_time > 2000) && start_time != 0) {
+  if((millis() - keys_hold_time > 2000) && keys_hold_time != 0) {
     
     mode++;
     mode %= 2;
-    start_time = 0;
+    keys_hold_time = 0;
 
     Serial.print("Mode: "), Serial.println(mode);
   }
@@ -386,30 +409,45 @@ void activate_keypad(int &mode) {
 void start_leds() {
 
   unsigned long starting_time = millis();
-  byte brightness = 255;
   byte start_index = 0;
   
   do {
-    byte color_index = start_index;
-
-    for( int i = 0; i < NUM_LEDS; ++i) {
-
-      leds[i] = ColorFromPalette(RainbowStripeColors_p, color_index, brightness, LINEARBLEND);
-      color_index += 2;
-    }
+    
+    fill_leds_palette(start_index);
     FastLED.show();
     delay(10);
-    Serial.println(start_index);
+    // Serial.println(start_index);
     start_index++;
-
   }
   while(millis() - starting_time < 2000);
+}
+
+void fill_leds_palette(byte color_index) {
+    
+  byte brightness = 255;
+
+  for( int i = 0; i < NUM_LEDS; ++i) {
+
+    leds[i] = ColorFromPalette(leds_palette, color_index, brightness, leds_blend);
+    color_index += 2;
+  }
 }
 
 //TO DO
 void key_animation(bool on) {
   
 
+}
+
+void set_color_palette(byte mode) {
+  switch(mode) {
+    case 0: default:
+    leds_palette = ForestColors_p;
+      break;
+    case 1:
+    leds_palette = CloudColors_p;
+      break;
+  };
 }
 
 void set_color_ametysth() {
@@ -527,7 +565,7 @@ void activate_auto_mode() {
   int chords_break_time = 1000; //time in ms
   
 
-  // unsigned int start_time = millis();
+  // unsigned int keys_hold_time = millis();
   // unsigned int end_time = millis() + chord_time;
 
   //TO DO | PROPABLY BETTER IS TO USE POINTERS
@@ -551,8 +589,8 @@ void activate_auto_mode() {
     }
     //Serial.println();
 
-    start_time = millis();
-    end_time = start_time + chord_time;
+    keys_hold_time = millis();
+    end_time = keys_hold_time + chord_time;
 
 
   }
