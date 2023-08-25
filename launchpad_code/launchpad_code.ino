@@ -1,16 +1,40 @@
-
-
 #include "MIDIUSB.h"
 
 #include <Keypad.h>
 
 #include "Mux.h"
+
 #include <Arduino.h>
 
 #include <FastLED.h>
 
+
+/*********************
+Preparing multiplexer with potentiometers
+*********************/
 using namespace admux;
 
+Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(16, 15, 14));
+
+#define NUMBER_OF_POTS 7
+
+struct potentiometer {
+
+  int mux_channel; 
+  int control_number;
+  int pre_value;
+  int value;
+  int channel = 0;
+};
+
+potentiometer potentiometers[NUMBER_OF_POTS];
+
+int acceptance_rate = 16; //analong value in range betweet 0 and 1023       
+
+
+/*********************
+Preparing "music logic" and MIDI default parameters
+*********************/
 #define MAX_NOTES 12
 #define MAJOR 'M'
 #define MINOR_NAT 'm'
@@ -18,32 +42,21 @@ using namespace admux;
 #define PENTATONIC 'p'
 #define CHROMATIC 'c'
 
-int base_velocity = 100;
-int base_channel = 0;
-
-unsigned long time = 0;
-unsigned long keys_hold_time = 0;
-unsigned long leds_timer = 0;
-
-unsigned long end_time = 0;
-
-int minor_chord[] = {0, 3, 7};
-int major_chord[] = {0, 4, 7};
-int half_dim_chord[] = {0, 3, 6};
-
+byte base_velocity = 100;
+byte base_channel = 0;
 
 class scale {
 
   public:
-  char tonality;
-  byte tonic;
+  char tonality; //determine what intervals are between notes
+  byte tonic;    //represents first note of scale
   byte notes[MAX_NOTES];
-  byte count_notes = 0;
-  byte chord_notes = 1;
+  byte chord_notes = 1; //number of notes stacked up while sending MIDI signal
 
   scale() {
-    
-    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255; //error message
+
+    //initializing notes with error message
+    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
     tonic = 60;
     tonality = MINOR_HAR;
 
@@ -51,12 +64,17 @@ class scale {
     notes[2] = 4; notes[3] = 5; 
     notes[4] = 7; notes[5] = 9;
     notes[6] = 11;
-
-    count_notes = 7;
   };
- 
+  
+  byte count_notes() {
+
+    byte count = 0;
+    for(int i = 0; i < MAX_NOTES; i++) if(notes[i] != 255) count++;
+    return count;
+  }
+
   void set_tonic(byte tonic) {
-    
+
     this -> tonic = tonic;
   }
 
@@ -64,6 +82,7 @@ class scale {
 
     this -> tonality = tonality;
 
+    //error message
     for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
     switch (tonality) {
     case 'n':
@@ -92,91 +111,56 @@ class scale {
     case 'c': default:
       for(int i = 0; i < MAX_NOTES; i++) notes[i] = i;      
       break;
-    }
-    count_notes = 0;
-    //Serial.println("Notes: ");
-    for(int i = 0; i < MAX_NOTES; i++) {
-      //Serial.print(" "), Serial.print(notes[i]);
-      if(notes[i] != 255) count_notes++;
-    }
-    
-    //Serial.print("Count notes: "), Serial.println(count_notes);
+    }    
   }
-
 };
 
 scale scale;
 
-struct midi_signal {
-	uint8_t header;
-	uint8_t byte1;
-	uint8_t byte2;
-	uint8_t byte3;
-  unsigned long time;
-}; 
 
-midi_signal midi_signals[100];
-
-//Mux mux(Pinset(5, 6, 7));
-
-Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(15, 14, 16));
-
-
+/*********************
+Preparing LEDs
+*********************/
 #define LED_PIN 10
-#define NUM_LEDS 16
+#define NUM_LEDS 15
+
 int updates_per_second = 50;
 
 CRGB leds[NUM_LEDS];
-CRGB leds_layer[NUM_LEDS];
 
 CRGBPalette16 leds_palette;
 TBlendType leds_blend;
 
+unsigned long leds_timer = 0;
 
-byte current_pot_index;
 
-//preparing keypad
+/*********************
+Preparing Keypad
+*********************/
 const byte ROWS = 4;
 const byte COLS = 4;
 
 char keys[ROWS][COLS];
 
-
 byte rowPins[ROWS] = {5, 4, 3, 2};
 byte colPins[COLS] = {9, 8, 7, 6}; 
-// byte rowPins[ROWS] = {2, 3, 4, 5};
-// byte colPins[COLS] = {6, 7, 8, 9}; 
 
 Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
-//
-//potentiometers
-//
-const byte number_of_pot = 7;
-
-struct potentiometer {
-
-  int mux_channel; 
-  int control_number;
-  int pre_value;
-  int value;
-  int channel = 0;
-
-};
-
-potentiometer potentiometers[number_of_pot];
+unsigned long keys_hold_time = 0;
 
 
+/*********************
+Default send-MIDI functions from MIDIUSB/examples/MIDIUSB_write/MIDIUSB_write.ino
+*********************/
 void noteOn(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOn);
-  //Serial.print("NOTE ON: "), Serial.println(pitch);
 }
 
 void noteOff(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOff);
-  //Serial.print("NOTE OFF: "), Serial.println(pitch);
 }
 
 void controlChange(byte channel, byte control, byte value) {
@@ -184,20 +168,12 @@ void controlChange(byte channel, byte control, byte value) {
   MidiUSB.sendMIDI(event);
 }
 
-int mux_channel;
-int pre_value;
-int value;
-int control_number;
-int channel;
-int acceptance_rate = 20; //value on potentiometer that need to
-                          //be changed to send midi command
 
 #define SETUP_MODE 0
 #define NORMAL_MODE 1
-#define AUTO_MODE 2
+#define AUTO_MODE 2 //TO DO - not implemented yet
 
-byte mode = NORMAL_MODE;
-
+byte mode;
 byte change_mode_count = 0;
 
 void setup() {
@@ -209,7 +185,7 @@ void setup() {
 
   start_leds();
 
-  for(int i = 0; i < number_of_pot; i++) potentiometers[i].mux_channel = i;
+  for(int i = 0; i < NUMBER_OF_POTS; i++) potentiometers[i].mux_channel = i;
   
   potentiometers[0].control_number = 1;   //modulation
   potentiometers[1].control_number = 2;   //random
@@ -221,65 +197,59 @@ void setup() {
 
   leds_timer = millis();
 
-  set_color_palette(mode);
-  
+  mode = SETUP_MODE;
+  set_color_palette(mode); 
 }
-
-
 
 void loop() {
 
-
-  static byte start_index = 0;
-
-  //midi_reading();
+  static byte leds_start_index = 0;
 
   activate_potentiometers(mode);
       
   activate_keypad(mode);
   MidiUSB.flush();
 
-
   if((millis() - leds_timer) > (1000 / updates_per_second)) {
 
-    fill_leds_palette(start_index);
+    fill_leds_palette(leds_start_index);
     FastLED.show();
-    start_index++;
+    leds_start_index++;
     leds_timer = millis();
   }
 }
 
 void activate_potentiometers(byte mode) {
   
-  for(byte i = 0; i < number_of_pot; i++) {
+  int mux_channel;
+  int value;
+  int control_number;
+
+  for(byte i = 0; i < NUMBER_OF_POTS; i++) {
     
-    if(i == 0) continue;
     control_number = potentiometers[i].control_number;
 
-    mux_channel = potentiometers[i].mux_channel; //multiplexer channel
+    mux_channel = potentiometers[i].mux_channel;
 
     value = mux.read(mux_channel);
 
     potentiometers[i].value = value;
 
-    //sending change of value only if there is a change on potentiometer
+    //sending change of value only if there is a known change on potentiometer
     if( potentiometers[i].value < potentiometers[i].pre_value + acceptance_rate
     && potentiometers[i].value > potentiometers[i].pre_value - acceptance_rate ) continue; 
   
-
-    //color depends on number of potentiometer i, progress is used to turn on proper number of leds 
     //set_color_and_progress(i, ((double) potentiometers[i].value) / 1023.0 ); 
-    if(mode == NORMAL_MODE) {
-      //set_color_and_progress(i, value / 1023.0); 
-    }
+
     potentiometers[i].pre_value = potentiometers[i].value;
-    
-    
+
     if( i == 3) FastLED.setBrightness(value / 4);
+
+    if(i == 6) updates_per_second = value / 4;
 
     //Sending midi control change
     if(mode == NORMAL_MODE) {
-      controlChange(channel, control_number, value / 8);
+      controlChange(base_channel, control_number, value / 8);
       continue;
     }
 
@@ -297,6 +267,7 @@ void activate_potentiometers(byte mode) {
       int temp_note = value / 8;
       if(temp_note > 20 && temp_note <= 103) {
         scale.set_tonic(temp_note);
+        //note_on_time(temp_note, 100);
         notes_to_keypad();
       }
     }
@@ -311,24 +282,20 @@ void activate_potentiometers(byte mode) {
         default:
           scale.chord_notes = 1;
           break;
-      }
-
-      
+      }  
     }
 
     if(i == 5) {
       int octave = (value / 127);
       int temp_note = (octave * 12) + (scale.tonic % 12);
-      if(temp_note > 20 && temp_note <= 103) {
+      if(temp_note > 20 && temp_note <= 103 && temp_note != scale.tonic) {
         scale.set_tonic(temp_note);
+        //note_on_time(temp_note, 100);
         notes_to_keypad();
       }
     }
 
-    if(i == 6) updates_per_second = value / 4;
-
   }
-
 }
 
 
@@ -336,14 +303,15 @@ void activate_keypad(byte &mode) {
 
   bool key_active = false;
 
-  //snippet of code from examples from Keypad library repository
+  /*********************
+  Modified part of code from Keypad/examples/MultiKey/MultiKey.ino
+  *********************/
   if (kpd.getKeys()) {
     
-    for (int i = 0; i < LIST_MAX; i++) {  // Scan the whole key list.
+    for (int i = 0; i < LIST_MAX; i++) {
        
       if ( kpd.key[i].stateChanged ) {
 
-        // Only find keys that have changed state.
         int note = 0;
         byte octave = 0;
         switch (kpd.key[i].kstate) {  
@@ -356,23 +324,18 @@ void activate_keypad(byte &mode) {
 
             if(change_mode_count == 2) {
               keys_hold_time = millis();
-              break;
+              clean_midi();
+              continue;
             } 
-            // else if(change_mode_count == 1) break;
-            
-            Serial.println(kpd.key[i].kchar);
-            
+                
             note = (byte) kpd.key[i].kchar;
-
-            play_chord(true, note);
+            play_notes(true, note);
         
-            leds_palette = LavaColors_p;
             break;
           case HOLD:
           key_active = true;
             break;
           case RELEASED:
-
 
             if(kpd.key[i].kchar == keys[3][3] 
             || kpd.key[i].kchar == keys[3][0]) change_mode_count = 0;
@@ -380,44 +343,39 @@ void activate_keypad(byte &mode) {
             if(change_mode_count < 2) keys_hold_time = 0;
             
             note = (byte) kpd.key[i].kchar;
-
             
-            play_chord(false, note);
+            play_notes(false, note);
 
-            if(key_active == false) set_color_palette(mode);
             break;
           case IDLE:
             break;
         }
-        Serial.print(kpd.key[i].kchar);
-      }
-      
+      }      
     }
   }
 
-  if((millis() - keys_hold_time > 2000) && keys_hold_time != 0) {
+  if((millis() - keys_hold_time > 1000) && keys_hold_time != 0) {
     
     mode++;
     mode %= 2;
     keys_hold_time = 0;
-
+    set_color_palette(mode);
     Serial.print("Mode: "), Serial.println(mode);
   }
-      //if(key_active == false) clean_midi();
 }
 
 void start_leds() {
 
   unsigned long starting_time = millis();
-  byte start_index = 0;
+  byte leds_start_index = 0;
   
   do {
     
-    fill_leds_palette(start_index);
+    fill_leds_palette(leds_start_index);
     FastLED.show();
     delay(10);
-    // Serial.println(start_index);
-    start_index++;
+    // Serial.println(leds_start_index);
+    leds_start_index++;
   }
   while(millis() - starting_time < 2000);
 }
@@ -433,12 +391,6 @@ void fill_leds_palette(byte color_index) {
   }
 }
 
-//TO DO
-void key_animation(bool on) {
-  
-
-}
-
 void set_color_palette(byte mode) {
   switch(mode) {
     case 0: default:
@@ -447,22 +399,17 @@ void set_color_palette(byte mode) {
     case 1:
     leds_palette = CloudColors_p;
       break;
+    case 2:
+    leds_palette = OceanColors_p;
+      break;
   };
-}
-
-void set_color_ametysth() {
-  for(int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Amethyst;
 }
 
 void set_color_black() {
   for(int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
 }
 
-void set_color_red() {
-  for(int i = 0; i < NUM_LEDS; i++) leds[i].setRGB(233,150,122);
-}
-
-
+//color depends on number of potentiometer i, progress is used to turn on proper number of leds 
 void set_color_and_progress(int pot_index, double progress) {
   int num_of_leds_on = (int) (NUM_LEDS * progress);
 
@@ -515,13 +462,12 @@ void set_color_and_progress(int pot_index, double progress) {
 
 void notes_to_keypad() {
 
-  //Turning off all of the notes
+  //Turning all of the notes from previou keypad off
   for(int i = 0 ; i < ROWS; i++) {
     for(int j = 0 ; j < COLS; j++) {
       noteOff(base_channel, (int)keys[i][j], base_velocity);
     } 
   }
-
   
   Serial.print("Tonic: "), Serial.println(scale.tonic);
   Serial.print("Tonality: "), Serial.println(scale.tonality);
@@ -540,58 +486,45 @@ void notes_to_keypad() {
       Serial.print("  "); 
       
       note_index++;
-      if(note_index == scale.count_notes) octave++;
-      note_index %= scale.count_notes;
+      if(note_index == scale.count_notes()) octave++;
+      note_index %= scale.count_notes();
     }
     Serial.println(); 
-      // Serial.print("            Octave: "),
-      // Serial.println(octave);
   }
   Serial.println();
 }
 
 void activate_auto_mode() {
 
-  for(int note : scale.notes) {
-    Serial.print(note), 
-    Serial.print(" "); 
-  }
-  Serial.println();
-
-
-  int chords_number = 4;
-  int chord_notes = 3;
-  int chord_time = 1000; //time in ms
-  int chords_break_time = 1000; //time in ms
+  static unsigned long play_time = millis();
+  static byte chord_index = 0;
   
-
+  int chords_number = 4;
+  int chord_time = 1000; //time in ms
+  
   // unsigned int keys_hold_time = millis();
   // unsigned int end_time = millis() + chord_time;
 
   //TO DO | PROPABLY BETTER IS TO USE POINTERS
-  int chords[chords_number][chord_notes];
+  int chords[chords_number][scale.chord_notes];
   
   for(int i = 0; i < chords_number; i++) {
 
-    int prime = i;
-    //int prime = notes[sizeof(a_min_har.notes)];
+    //Controling likelihood of notes 
+    byte graviti_notes[] = {0, 0, 0, 2, 3, 3, 4, 4, 5, 1, 1, 2, 2, 6};
 
+    byte note_index = graviti_notes[wheel_selection_index(sizeof(graviti_notes))]; 
+    byte note = scale.tonic + scale.notes[note_index];
+    
+    // play_notes(true, note);
+
+    // delay(chord_time);
+
+    // play_notes(false, note);
+
+    //int prime = notes[sizeof(a_min_har.notes)];
     // Serial.print("chord prime: "), Serial.println(prime);
     // Serial.print("tonic note: "), Serial.println(acc_scale.tonic);
-
-
-    //Serial.print("Chord: ");
-    for(int j = 0; j < chord_notes; j++) {
-      //Serial.print("prime + 2 * j = "), Serial.println(prime + 2 * j);
-      chords[i][j] = scale.notes[(prime + 2 * j) % 7] + scale.tonic;
-      //Serial.print(chords[i][j]),
-      //Serial.print(" ");
-    }
-    //Serial.println();
-
-    keys_hold_time = millis();
-    end_time = keys_hold_time + chord_time;
-
 
   }
 
@@ -602,25 +535,15 @@ void activate_auto_mode() {
   //   }
   //   Serial.println();
   // }
-
-  for(int i = 0; i < chords_number; i ++) {
-
-      for(int j = 0; j < chord_notes; j++) noteOn(0, chords[i][j], base_velocity);
-      delay(chord_time);
-
-      for(int j = 0; j < chord_notes; j++) noteOff(0, chords[i][j], base_velocity);
-      delay(chords_break_time);
-  }
-
-
 }
 
 void clean_midi() {
+
   //Turning all of the notes off
     for(int i = 0 ; i < 256; i++) noteOff(base_channel, i, base_velocity);
 }
 
-
+//Not used yet. It's should be useful while generating chords
 int wheel_selection_index(int size) {
                           
   int sum = 0; 
@@ -635,12 +558,12 @@ int wheel_selection_index(int size) {
 
       if(random_number <= cumulative_sum) return i;
   }
-
 }
 
-//ch_symbol = chord symbol, ch_notes = chord_notes which means, what notes are in chord 
-//length is in milliseconds
-void play_chord(bool on, byte prime_note) {
+void play_notes(bool on, byte prime_note) {
+
+  if(on == true ) leds_palette = LavaColors_p;
+  else set_color_palette(mode);
 
   int chords[scale.chord_notes];
 
@@ -648,7 +571,7 @@ void play_chord(bool on, byte prime_note) {
   byte index = 0;
 
   for(int i = 0; i < 3; i++){
-    for(int j = 0; j < scale.count_notes; j++) {
+    for(int j = 0; j < scale.count_notes(); j++) {
       if(prime_note == scale.tonic + scale.notes[j] + (i * 12)) {
         octave = i;
         index = j;
@@ -659,9 +582,9 @@ void play_chord(bool on, byte prime_note) {
   } 
 
   for(int i = 0; i < scale.chord_notes; i++) {
-    if(index + i * 2 >= scale.count_notes) octave = 1;
-    else if(index + i * 2 >= 2*scale.count_notes) octave = 2;
-    chords[i] = scale.tonic + scale.notes[(index + i * 2) % scale.count_notes] + (12 * octave);
+    if(index + i * 2 >= scale.count_notes()) octave = 1;
+    else if(index + i * 2 >= 2*scale.count_notes()) octave = 2;
+    chords[i] = scale.tonic + scale.notes[(index + i * 2) % scale.count_notes()] + (12 * octave);
   }
 
   Serial.print("chord state: "), Serial.println(on);
@@ -683,68 +606,20 @@ void play_chord(bool on, byte prime_note) {
   Serial.println();
 }
 
-void midi_reading() {
+//Not used yet. It's for playing chodrs without using delay
+void note_on_time(byte note, int timer) {
 
-  unsigned long start_midi_reading = millis();
+  static int time = timer;
+  static unsigned long note_time = millis();
+  static bool note_on = false;
 
-  int index = 0;
-
-  midiEventPacket_t rx;
-    // do {
-    //   rx = MidiUSB.read();
-    //   if (rx.header != 0) {
-        
-        // midi_signals[index].header = rx.header;
-        // midi_signals[index].byte1 = rx.byte1;
-        // midi_signals[index].byte2 = rx.byte2;
-        // midi_signals[index].byte3 = rx.byte3;
-        // midi_signals[index].time = millis() - start_midi_reading;
-
-    //     Serial.print(rx.header), Serial.print("-"), Serial.print(rx.byte1), Serial.print("-");
-    //     Serial.print(rx.byte2), Serial.print("-"), Serial.print(rx.byte3), Serial.print("-");
-    //     Serial.println(midi_signals[index].time);
-    //     index++;
-    //   }
-    // } while (index < 100 && rx.header != 0);
-
-    do {
-    rx = MidiUSB.read();
-    if (rx.header != 0) {
-
-      midi_signals[index].header = rx.header;
-      midi_signals[index].byte1 = rx.byte1;
-      midi_signals[index].byte2 = rx.byte2;
-      midi_signals[index].byte3 = rx.byte3;
-      midi_signals[index].time = millis() - start_midi_reading;
-
-      Serial.print("Received: ");
-      Serial.print(rx.header, HEX);
-      Serial.print("-");
-      Serial.print(rx.byte1, HEX);
-      Serial.print("-");
-      Serial.print(rx.byte2, HEX);
-      Serial.print("-");
-      Serial.println(rx.byte3, HEX);
-
-      index++;
-    }
-  } while (rx.header != 0);
-    // } while (millis() - start_midi_reading < 10000);
-
-    // for(midi_signal signal : midi_signals) {
-
-    //     Serial.print("Stored: ");
-    //     Serial.print(signal.header, OCT);
-    //     Serial.print("-");
-    //     Serial.print(signal.byte1, OCT);
-    //     Serial.print("-");
-    //     Serial.print(signal.byte2, OCT);
-    //     Serial.print("-");
-    //     Serial.print(signal.byte3, OCT);
-    //     Serial.print("---");
-    //     Serial.println(signal.time, OCT);
-    // }
-
-
-
+  if(note_on == false) {
+    noteOn(base_channel, note, base_velocity);
+    note_on = true;
+  } 
+  else if((millis() - note_time) >= time) {
+    noteOff(base_channel, note, base_velocity);
+    note_on = false;
+    note_time = millis();
+  }
 }
