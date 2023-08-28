@@ -4,7 +4,6 @@
 
 #include "Mux.h"
 
-#include <Arduino.h>
 
 #include <FastLED.h>
 
@@ -13,7 +12,6 @@
 Preparing multiplexer with potentiometers
 *********************/
 using namespace admux;
-
 Mux mux(admux::Pin(A0, INPUT, PinType::Analog), Pinset(16, 15, 14));
 
 #define NUMBER_OF_POTS 7
@@ -29,7 +27,7 @@ struct potentiometer {
 
 potentiometer potentiometers[NUMBER_OF_POTS];
 
-int acceptance_rate = 16; //analong value in range betweet 0 and 1023       
+int acceptance_rate = 32; //analong value in range betweet 0 and 1023       
 
 
 /*********************
@@ -172,6 +170,7 @@ void controlChange(byte channel, byte control, byte value) {
 #define SETUP_MODE 0
 #define NORMAL_MODE 1
 #define AUTO_MODE 2 //TO DO - not implemented yet
+unsigned long auto_mode_timer;
 
 byte mode;
 byte change_mode_count = 0;
@@ -197,7 +196,7 @@ void setup() {
 
   leds_timer = millis();
 
-  mode = SETUP_MODE;
+  mode = AUTO_MODE;
   set_color_palette(mode); 
 }
 
@@ -208,6 +207,10 @@ void loop() {
   activate_potentiometers(mode);
       
   activate_keypad(mode);
+
+  if(mode == AUTO_MODE) auto_mode();
+
+
   MidiUSB.flush();
 
   if((millis() - leds_timer) > (1000 / updates_per_second)) {
@@ -357,7 +360,7 @@ void activate_keypad(byte &mode) {
   if((millis() - keys_hold_time > 1000) && keys_hold_time != 0) {
     
     mode++;
-    mode %= 2;
+    mode %= 3;
     keys_hold_time = 0;
     set_color_palette(mode);
     Serial.print("Mode: "), Serial.println(mode);
@@ -494,39 +497,42 @@ void notes_to_keypad() {
   Serial.println();
 }
 
-void activate_auto_mode() {
+void auto_mode() {
 
   static unsigned long play_time = millis();
+
   static byte chord_index = 0;
+
+  static byte note_on = 0;
   
   int chords_number = 4;
-  int chord_time = 1000; //time in ms
-  
-  // unsigned int keys_hold_time = millis();
-  // unsigned int end_time = millis() + chord_time;
+  int chord_time = 2000; //time in ms
 
-  //TO DO | PROPABLY BETTER IS TO USE POINTERS
-  int chords[chords_number][scale.chord_notes];
   
-  for(int i = 0; i < chords_number; i++) {
-
     //Controling likelihood of notes 
     byte graviti_notes[] = {0, 0, 0, 2, 3, 3, 4, 4, 5, 1, 1, 2, 2, 6};
+    //byte graviti_notes[] = {0, 0, 3, 3};
 
     byte note_index = graviti_notes[wheel_selection_index(sizeof(graviti_notes))]; 
     byte note = scale.tonic + scale.notes[note_index];
     
-    // play_notes(true, note);
+    if(note_on == 0) {
+      play_notes(true, note);
+      note_on = note;
+    }
 
-    // delay(chord_time);
+    if(millis() - play_time > chord_time) {
+      play_notes(false, note);
+      note_on = 0;
+      play_time = millis();
+    }
 
-    // play_notes(false, note);
+    Serial.print("Prime NOTE: "), Serial.println(note);
 
-    //int prime = notes[sizeof(a_min_har.notes)];
-    // Serial.print("chord prime: "), Serial.println(prime);
-    // Serial.print("tonic note: "), Serial.println(acc_scale.tonic);
+    if(chord_index  >= chords_number) chord_index %= chords_number;
+  
 
-  }
+  Serial.println();
 
   // Serial.println("Chords: ");
   // for(int i = 0; i < chords_number; i++) {
@@ -598,6 +604,7 @@ void play_notes(bool on, byte prime_note) {
     if(on == true) {
       //Serial.print(note), Serial.print(" ");            
       noteOn(base_channel, note, base_velocity);
+
     } else {
       //Serial.print(note), Serial.print(" ");            
       noteOff(base_channel, note, base_velocity);
