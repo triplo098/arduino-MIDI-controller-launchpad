@@ -169,7 +169,7 @@ void controlChange(byte channel, byte control, byte value) {
 
 #define SETUP_MODE 0
 #define NORMAL_MODE 1
-#define AUTO_MODE 2 //TO DO - not implemented yet
+#define AUTO_MODE 2 
 unsigned long auto_mode_timer;
 
 byte mode;
