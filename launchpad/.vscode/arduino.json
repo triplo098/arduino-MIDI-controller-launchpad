@@ -1,6 +1,0 @@
-{
-    "board": "arduino:avr:micro",
-    "programmer": "arduinoasispatmega32u4",
-    "port": "COM10",
-    "sketch": "launchpad.ino"
-}

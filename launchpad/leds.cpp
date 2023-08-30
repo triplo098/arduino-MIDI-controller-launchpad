@@ -14,6 +14,7 @@ leds::leds() {
     updates_per_second = 100;
     leds_index = 0;
     brightness = 255;
+    leds_timer = 0;
 }
     
 
