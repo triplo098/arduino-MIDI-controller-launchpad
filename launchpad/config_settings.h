@@ -1,18 +1,20 @@
-#ifndef CONFIG_SETTINGS_H
-#define CONFIG_SETTINGS_H
+// #ifndef CONFIG_SETTINGS_H
+// #define CONFIG_SETTINGS_H
 
-#include <StreamUtils.h>
+// #include <StreamUtils.h>
+// #include <Arduino_JSON.h>
+// #include "scale.h"
 
-class config_settings {
+// class config_settings {
 
-	static public:
-		void store_settings();
-		void change_mode(uint64_t mode);
-	static private:	
-		uint8_t mode;
-		uint8_t base_velocity;
-		uint8_t base_channel;
+// 	static public:
+// 		void store_settings();
+// 	static private:	
+// 		uint8_t mode;
+// 		uint8_t base_velocity;
+// 		uint8_t base_channel;
+// 		scale scale;
 
-}
+// };
 
-#endif
+// #endif

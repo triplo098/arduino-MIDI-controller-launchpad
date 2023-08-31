@@ -1,12 +1,14 @@
-#include "MIDIUSB.h"
-
-#include <Keypad.h>
-
 #include "Mux.h"
-
 
 #include <FastLED.h>
 
+#include <Keypad.h>
+
+#include "MIDIUSB.h"
+
+#include "scale.h"
+
+#include "config_settings.h"
 
 /*********************
 Preparing multiplexer with potentiometers
@@ -43,77 +45,9 @@ Preparing "music logic" and MIDI default parameters
 byte base_velocity = 100;
 byte base_channel = 0;
 
-class scale {
 
-  public:
-  char tonality; //determine what intervals are between notes
-  byte tonic;    //represents first note of scale
-  byte notes[MAX_NOTES];
-  byte chord_notes = 1; //number of notes stacked up while sending MIDI signal
 
-  scale() {
-
-    //initializing notes with error message
-    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
-    tonic = 60;
-    tonality = MINOR_HAR;
-
-    notes[0] = 0; notes[1] = 2;
-    notes[2] = 4; notes[3] = 5; 
-    notes[4] = 7; notes[5] = 9;
-    notes[6] = 11;
-  };
-  
-  byte count_notes() {
-
-    byte count = 0;
-    for(int i = 0; i < MAX_NOTES; i++) if(notes[i] != 255) count++;
-    return count;
-  }
-
-  void set_tonic(byte tonic) {
-
-    this -> tonic = tonic;
-  }
-
-  void set_tonality(char tonality) {
-
-    this -> tonality = tonality;
-
-    //error message
-    for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
-    switch (tonality) {
-    case 'n':
-      notes[0] = 0; notes[1] = 2;
-      notes[2] = 3; notes[3] = 5;
-      notes[4] = 7; notes[5] = 8;
-      notes[6] = 10;
-      break;
-    case 'm':
-      notes[0] = 0; notes[1] = 2; 
-      notes[2] = 3; notes[3] = 5;
-      notes[4] = 7; notes[5] = 8;
-      notes[6] = 11;
-      break;
-    case 'M':
-      notes[0] = 0; notes[1] = 2;
-      notes[2] = 4; notes[3] = 5; 
-      notes[4] = 7; notes[5] = 9;
-      notes[6] = 11;
-      break;
-    case 'p':
-      notes[0] = 0; notes[1] = 2;
-      notes[2] = 4; notes[3] = 7;
-      notes[4] = 9;
-      break;
-    case 'c': default:
-      for(int i = 0; i < MAX_NOTES; i++) notes[i] = i;      
-      break;
-    }    
-  }
-};
-
-scale scale;
+scale scale(60, MAJOR, 1);
 
 
 /*********************
@@ -280,18 +214,18 @@ void activate_potentiometers(byte mode) {
       Serial.print("Mode: "), Serial.println(chord_mode);
       switch(chord_mode) {
         case 1: case 2: case 3: case 4:
-          scale.chord_notes = chord_mode;
+          scale.set_chord_notes(chord_mode);
           break;
         default:
-          scale.chord_notes = 1;
+          scale.set_chord_notes(1);
           break;
       }  
     }
 
     if(i == 5) {
       int octave = (value / 127);
-      int temp_note = (octave * 12) + (scale.tonic % 12);
-      if(temp_note > 20 && temp_note <= 103 && temp_note != scale.tonic) {
+      int temp_note = (octave * 12) + (scale.get_tonic() % 12);
+      if(temp_note > 20 && temp_note <= 103 && temp_note != scale.get_tonic()) {
         scale.set_tonic(temp_note);
         //note_on_time(temp_note, 100);
         notes_to_keypad();
@@ -472,14 +406,14 @@ void notes_to_keypad() {
     } 
   }
   
-  Serial.print("Tonic: "), Serial.println(scale.tonic);
-  Serial.print("Tonality: "), Serial.println(scale.tonality);
+  Serial.print("Tonic: "), Serial.println(scale.get_tonic());
+  Serial.print("Tonality: "), Serial.println(scale.get_tonality());
 
   int note_index = 0;
   int octave = 0;  
   for(int k = 0; k < ROWS; k++) {
     for(int n = 0; n < COLS; n++) {
-      int acc_note = scale.tonic;
+      int acc_note = scale.get_tonic();
 
       acc_note += scale.notes[note_index] + (12*octave);
 
@@ -514,7 +448,7 @@ void auto_mode() {
     //byte graviti_notes[] = {0, 0, 3, 3};
 
     byte note_index = graviti_notes[wheel_selection_index(sizeof(graviti_notes))]; 
-    byte note = scale.tonic + scale.notes[note_index];
+    byte note = scale.get_tonic() + scale.notes[note_index];
     
     if(note_on == 0) {
       play_notes(true, note);
@@ -571,14 +505,14 @@ void play_notes(bool on, byte prime_note) {
   if(on == true ) leds_palette = LavaColors_p;
   else set_color_palette(mode);
 
-  int chords[scale.chord_notes];
+  int chords[scale.get_chord_notes()];
 
   byte octave = 0;
   byte index = 0;
 
   for(int i = 0; i < 3; i++){
     for(int j = 0; j < scale.count_notes(); j++) {
-      if(prime_note == scale.tonic + scale.notes[j] + (i * 12)) {
+      if(prime_note == scale.get_tonic() + scale.notes[j] + (i * 12)) {
         octave = i;
         index = j;
         Serial.print("Note found: "), Serial.println(prime_note);
@@ -587,16 +521,16 @@ void play_notes(bool on, byte prime_note) {
     }
   } 
 
-  for(int i = 0; i < scale.chord_notes; i++) {
+  for(int i = 0; i < scale.get_chord_notes(); i++) {
     if(index + i * 2 >= scale.count_notes()) octave = 1;
     else if(index + i * 2 >= 2*scale.count_notes()) octave = 2;
-    chords[i] = scale.tonic + scale.notes[(index + i * 2) % scale.count_notes()] + (12 * octave);
+    chords[i] = scale.get_tonic() + scale.notes[(index + i * 2) % scale.count_notes()] + (12 * octave);
   }
 
   Serial.print("chord state: "), Serial.println(on);
   Serial.print("chord: ");
 
-  for(int i = 0; i < scale.chord_notes; i++) {
+  for(int i = 0; i < scale.get_chord_notes(); i++) {
     Serial.print(chords[i]), Serial.print(" ");    
   }
 
