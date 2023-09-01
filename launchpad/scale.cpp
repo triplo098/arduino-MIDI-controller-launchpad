@@ -1,13 +1,28 @@
 #include "scale.h"
 
-#define MAX_NOTES 12
-#define MAJOR 'M'
-#define MINOR_NAT 'm'
-#define MINOR_HAR 'n'
-#define PENTATONIC 'p'
-#define CHROMATIC 'c'
+// void show_notes();
 
+// int main () {
+  
+//   scale s(60, 'M', 3);
+//   s.set_notes();
 
+//   show_notes();
+//   return 0;
+// }
+
+// void show_notes() {
+//   for(int i = 0; i < s.count_notes(); i++) {
+//     std::cout << "note[" << i << "]: " << (int) s.notes[i] << std::endl;
+//   } 
+
+//   std::cout << "Tonic: " << (int) s.get_tonic() << std::endl;
+//   std::cout << "Tonality: " << s.get_tonality() << std::endl;
+//   std::cout << "Chord Notes: " << (int) s.get_chord_notes() << std::endl;
+
+//   std::cout << "Number of notes: " << (int) s.count_notes() << std::endl;
+
+// }
 scale::scale(uint8_t tonic, char tonality, uint8_t chord_notes) {
 
   for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
@@ -21,8 +36,13 @@ scale::scale(uint8_t tonic, char tonality, uint8_t chord_notes) {
 uint8_t scale::count_notes() {
 
   uint8_t count = 0;
-  for(int i = 0; i < MAX_NOTES; i++) if(notes[i] != 255) count++;
+  for(int i = 0; i < MAX_NOTES; i++) {
+    if(notes[i] != 255) count++;
+  }
+
   return count;
+
+
 }
 
 void scale::set_tonic(uint8_t tonic) {
@@ -49,34 +69,34 @@ void scale::set_notes() {
 
  for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
 
-  uint8_t *temp_notes = nullptr;
-  for(int i = 0; i < MAX_NOTES; i++) temp_notes[i] = 255;
-  
   switch (tonality) {
-  case 'n':
-    temp_notes = new uint8_t[7]{0, 2, 3, 5, 7, 8, 10};
-    break;
-  case 'm':
-    temp_notes = new uint8_t[7]{0, 2, 3, 5, 7, 8, 11};
-    break;
-  case 'M':
-    temp_notes = new uint8_t[7]{0, 2, 4, 5, 7, 9, 11};
-    break;
-  case 'p':
-    temp_notes = new uint8_t[5]{0, 2, 4, 7, 9};
-    break;
-  case 'c': default:
-    for(int i = 0; i < MAX_NOTES; i++) temp_notes[i] = i;      
-    break;
-  }
-
-  for(int i = 0; i < MAX_NOTES; i++) {
-    if(temp_notes[i] == 255) break;
-    notes[i] = temp_notes[i];
-  }
-  delete temp_notes;
-
-
+    case 'n':
+      notes[0] = 0; notes[1] = 2;
+      notes[2] = 3; notes[3] = 5;
+      notes[4] = 7; notes[5] = 8;
+      notes[6] = 10;
+      break;
+    case 'm':
+      notes[0] = 0; notes[1] = 2; 
+      notes[2] = 3; notes[3] = 5;
+      notes[4] = 7; notes[5] = 8;
+      notes[6] = 11;
+      break;
+    case 'M':
+      notes[0] = 0; notes[1] = 2;
+      notes[2] = 4; notes[3] = 5; 
+      notes[4] = 7; notes[5] = 9;
+      notes[6] = 11;
+      break;
+    case 'p':
+      notes[0] = 0; notes[1] = 2;
+      notes[2] = 4; notes[3] = 7;
+      notes[4] = 9;
+      break;
+    case 'c': default:
+      for(int i = 0; i < MAX_NOTES; i++) notes[i] = i;      
+      break;
+    }    
 }
 
 uint8_t scale::get_tonic() {
