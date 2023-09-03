@@ -19,6 +19,7 @@ class scale {
     uint8_t chord_notes; //number of notes stacked up while sending MIDI signal
 
   public:
+    scale();
     scale(uint8_t tonic, char tonality, uint8_t chord_notes);
     uint8_t notes[];
     uint8_t count_notes();

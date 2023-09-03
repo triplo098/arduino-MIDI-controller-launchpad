@@ -11,40 +11,37 @@
 /*********************
 Preparing multiplexer with potentiometers
 *********************/
-using namespace admux;
-Mux mux(Pin(A0, INPUT, PinType::Analog), Pinset(16, 15, 14));
+// using namespace admux;
+// Mux mux(Pin(A0, INPUT, PinType::Analog), Pinset(16, 15, 14));
 
-#define NUMBER_OF_POTS 7
+// #define NUMBER_OF_POTS 7
 
-struct potentiometer {
+// struct potentiometer {
 
-  int mux_channel; 
-  int control_number;
-  int pre_value;
-  int value;
-  int channel = 0;
-};
+//   int mux_channel; 
+//   int control_number;
+//   int pre_value;
+//   int value;
+//   int channel = 0;
+// };
 
-potentiometer potentiometers[NUMBER_OF_POTS];
+// potentiometer potentiometers[NUMBER_OF_POTS];
 
 
 /*********************
 Preparing "music logic" and MIDI default parameters
 *********************/
-
-uint8_t mode = 0;
+scale my_scale(60, MAJOR, 1);
 uint8_t base_velocity = 100;
 uint8_t base_channel = 0;
 
-scale(60, MAJOR, 1);
-
-config_settings congfig_settings(scale, SETUP_MODE, 100, 0);
+config_settings congfig_settings(my_scale, SETUP_MODE, base_velocity, base_channel);
 
 /*********************
 Preparing LEDs
 *********************/
 
-leds();
+leds leds;
 
 /*********************
 Preparing Keypad
@@ -58,10 +55,6 @@ uint8_t rowPins[ROWS] = {5, 4, 3, 2};
 uint8_t colPins[COLS] = {9, 8, 7, 6}; 
 
 Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
-
-unsigned long keys_hold_time = 0;
-
-uint8_t change_mode_count = 0;
 
 /*********************
 Default send-MIDI functions from MIDIUSB/examples/MIDIUSB_write/MIDIUSB_write.ino
@@ -88,118 +81,121 @@ unsigned long auto_mode_timer;
 void setup() {
 
 
-  for(int i = 0; i < NUMBER_OF_POTS; i++) potentiometers[i].mux_channel = i;
+  // for(int i = 0; i < NUMBER_OF_POTS; i++) potentiometers[i].mux_channel = i;
   
-  potentiometers[0].control_number = 1;   //modulation
-  potentiometers[1].control_number = 2;   //random
-  potentiometers[2].control_number = 10;  //pan
-  potentiometers[3].control_number = 74;  //brigthness
-  potentiometers[4].control_number = 8;   //volume
-  potentiometers[5].control_number = 3;  //random
-  potentiometers[6].control_number = 4;  //random
+  // potentiometers[0].control_number = 1;   //modulation
+  // potentiometers[1].control_number = 2;   //random
+  // potentiometers[2].control_number = 10;  //pan
+  // potentiometers[3].control_number = 74;  //brigthness
+  // potentiometers[4].control_number = 8;   //volume
+  // potentiometers[5].control_number = 3;  //random
+  // potentiometers[6].control_number = 4;  //random
 
 
   leds.initialize_leds();
 
   Serial.begin(9600);
 
-  congfig_settings.load_settings();
+  congfig_settings.load_from_EEPROM();
 
 }
 
 void loop() {
 
-  activate_potentiometers();
+  
+  // activate_potentiometers();
       
-  activate_keypad(mode);
+  activate_keypad(congfig_settings.mode);
 
-  if(mode == AUTO_MODE) auto_mode();
+  if(congfig_settings.mode == AUTO_MODE) auto_mode();
 
   MidiUSB.flush();
-  leds.update_leds(mode);
+  leds.update_leds(congfig_settings.mode);
 
 }
 
-void activate_potentiometers() {
+// void activate_potentiometers() {
   
-  int mux_channel;
-  int value;
-  int control_number;
+//   int mux_channel;
+//   int value;
+//   int control_number;
 
-  for(uint8_t i = 0; i < NUMBER_OF_POTS; i++) {
+//   for(uint8_t i = 0; i < NUMBER_OF_POTS; i++) {
     
-    control_number = potentiometers[i].control_number;
+//     control_number = potentiometers[i].control_number;
 
-    mux_channel = potentiometers[i].mux_channel;
+//     mux_channel = potentiometers[i].mux_channel;
 
-    value = mux.read(mux_channel);
+//     value = mux.read(mux_channel);
 
-    potentiometers[i].value = value;
+//     potentiometers[i].value = value;
 
-    //sending change of value only if there is a known change on potentiometer
-    if( potentiometers[i].value < potentiometers[i].pre_value + ACCEPTANCE_RATE
-    && potentiometers[i].value > potentiometers[i].pre_value - ACCEPTANCE_RATE ) continue; 
+//     //sending change of value only if there is a known change on potentiometer
+//     if( potentiometers[i].value < potentiometers[i].pre_value + ACCEPTANCE_RATE
+//     && potentiometers[i].value > potentiometers[i].pre_value - ACCEPTANCE_RATE ) continue; 
   
-    potentiometers[i].pre_value = potentiometers[i].value;
+//     potentiometers[i].pre_value = potentiometers[i].value;
 
-    if( i == 3) FastLED.setBrightness(value / 4);
+//     if( i == 3) FastLED.setBrightness(value / 4);
 
-    if(i == 6) leds.updates_per_second = value / 4;
+//     if(i == 6) leds.updates_per_second = value / 4;
 
-    //Sending midi control change
-    if(mode == NORMAL_MODE) {
-      controlChange(base_channel, control_number, value / 8);
-      continue;
-    }
+//     //Sending midi control change
+//     if(mode == NORMAL_MODE) {
+//       controlChange(base_channel, control_number, value / 8);
+//       continue;
+//     }
 
-    //Setting up parameters such as tonality, tonic, octave with potentiometers    
-    if( i == 1) {
-      if(value < 200) scale.set_tonality(MINOR_NAT);
-      else if(value < 400) scale.set_tonality(MINOR_HAR);
-      else if(value < 600) scale.set_tonality(MAJOR);
-      else if(value < 800) scale.set_tonality(PENTATONIC);
-      else if(value >= 800) scale.set_tonality(CHROMATIC);
-      notes_to_keypad();
-    }
+//     //Setting up parameters such as tonality, tonic, octave with potentiometers    
+//     if( i == 1) {
+//       if(value < 200) my_scale.set_tonality(MINOR_NAT);
+//       else if(value < 400) my_scale.set_tonality(MINOR_HAR);
+//       else if(value < 600) my_scale.set_tonality(MAJOR);
+//       else if(value < 800) my_scale.set_tonality(PENTATONIC);
+//       else if(value >= 800) my_scale.set_tonality(CHROMATIC);
+//       notes_to_keypad();
+//     }
     
-    if(i == 2) {
-      int temp_note = value / 8;
-      if(temp_note > 20 && temp_note <= 103) {
-        scale.set_tonic(temp_note);
-        //note_on_time(temp_note, 100);
-        notes_to_keypad();
-      }
-    }
+//     if(i == 2) {
+//       int temp_note = value / 8;
+//       if(temp_note > 20 && temp_note <= 103) {
+//         my_scale.set_tonic(temp_note);
+//         //note_on_time(temp_note, 100);
+//         notes_to_keypad();
+//       }
+//     }
 
-    if( i == 4) {
-      uint8_t chord_mode = (value / 256) + 1;
-      Serial.print("Mode: "), Serial.println(chord_mode);
-      switch(chord_mode) {
-        case 1: case 2: case 3: case 4:
-          scale.set_chord_notes(chord_mode);
-          break;
-        default:
-          scale.set_chord_notes(1);
-          break;
-      }  
-    }
+//     if( i == 4) {
+//       uint8_t chord_mode = (value / 256) + 1;
+//       Serial.print("Mode: "), Serial.println(chord_mode);
+//       switch(chord_mode) {
+//         case 1: case 2: case 3: case 4:
+//           my_scale.set_chord_notes(chord_mode);
+//           break;
+//         default:
+//           my_scale.set_chord_notes(1);
+//           break;
+//       }  
+//     }
 
-    if(i == 5) {
-      int octave = (value / 127);
-      int temp_note = (octave * 12) + (scale.get_tonic() % 12);
-      if(temp_note > 20 && temp_note <= 103 && temp_note != scale.get_tonic()) {
-        scale.set_tonic(temp_note);
-        //note_on_time(temp_note, 100);
-        notes_to_keypad();
-      }
-    }
+//     if(i == 5) {
+//       int octave = (value / 127);
+//       int temp_note = (octave * 12) + (my_scale.get_tonic() % 12);
+//       if(temp_note > 20 && temp_note <= 103 && temp_note != my_scale.get_tonic()) {
+//         my_scale.set_tonic(temp_note);
+//         //note_on_time(temp_note, 100);
+//         notes_to_keypad();
+//       }
+//     }
 
-  }
-}
+//   }
+// }
 
 
-void activate_keypad() {
+void activate_keypad(uint8_t& mode) {
 
+  static uint8_t change_mode_count = 0;
+  static long change_mode_time = 0;
   bool key_active = false;
 
   /*********************
@@ -222,7 +218,7 @@ void activate_keypad() {
             else if(kpd.key[i].kchar == keys[3][0]) change_mode_count++;
 
             if(change_mode_count == 2) {
-              keys_hold_time = millis();
+              change_mode_time = millis();
               clean_midi();
               continue;
             } 
@@ -239,7 +235,7 @@ void activate_keypad() {
             if(kpd.key[i].kchar == keys[3][3] 
             || kpd.key[i].kchar == keys[3][0]) change_mode_count = 0;
 
-            if(change_mode_count < 2) keys_hold_time = 0;
+            if(change_mode_count < 2) change_mode_time = 0;
             
             note = (uint8_t) kpd.key[i].kchar;
             
@@ -253,13 +249,13 @@ void activate_keypad() {
     }
   }
 
-  if((millis() - keys_hold_time > 1000) && keys_hold_time != 0) {
+  if((millis() - change_mode_time > 1000) && change_mode_time != 0) {
     
     mode++;
     mode %= 3;
-    keys_hold_time = 0;
-    set_color_palette(mode);
-    Serial.print("Mode: "), Serial.println(mode);
+    change_mode_time = 0;
+    // set_color_palette(mode);
+    // Serial.print("Mode: "), Serial.println(mode);
   }
 }
 
@@ -272,16 +268,16 @@ void notes_to_keypad() {
     } 
   }
   
-  Serial.print("Tonic: "), Serial.println(scale.get_tonic());
-  Serial.print("Tonality: "), Serial.println(scale.get_tonality());
+  Serial.print("Tonic: "), Serial.println(my_scale.get_tonic());
+  Serial.print("Tonality: "), Serial.println(my_scale.get_tonality());
 
   int note_index = 0;
   int octave = 0;  
   for(int k = 0; k < ROWS; k++) {
     for(int n = 0; n < COLS; n++) {
-      int acc_note = scale.get_tonic();
+      int acc_note = my_scale.get_tonic();
 
-      acc_note += scale.notes[note_index] + (12*octave);
+      acc_note += my_scale.notes[note_index] + (12*octave);
 
       keys[k][n] = acc_note;
 
@@ -289,8 +285,8 @@ void notes_to_keypad() {
       Serial.print("  "); 
       
       note_index++;
-      if(note_index == scale.count_notes()) octave++;
-      note_index %= scale.count_notes();
+      if(note_index == my_scale.count_notes()) octave++;
+      note_index %= my_scale.count_notes();
     }
     Serial.println(); 
   }
@@ -314,7 +310,7 @@ void auto_mode() {
     //uint8_t graviti_notes[] = {0, 0, 3, 3};
 
     uint8_t note_index = graviti_notes[wheel_selection_index(sizeof(graviti_notes))]; 
-    uint8_t note = scale.get_tonic() + scale.notes[note_index];
+    uint8_t note = my_scale.get_tonic() + my_scale.notes[note_index];
     
     if(note_on == 0) {
       play_notes(true, note);
@@ -368,17 +364,15 @@ int wheel_selection_index(int size) {
 
 void play_notes(bool on, uint8_t prime_note) {
 
-  if(on == true ) leds_palette = LavaColors_p;
-  else set_color_palette(mode);
 
-  int chords[scale.get_chord_notes()];
+  int chords[my_scale.get_chord_notes()];
 
   uint8_t octave = 0;
   uint8_t index = 0;
 
   for(int i = 0; i < 3; i++){
-    for(int j = 0; j < scale.count_notes(); j++) {
-      if(prime_note == scale.get_tonic() + scale.notes[j] + (i * 12)) {
+    for(int j = 0; j < my_scale.count_notes(); j++) {
+      if(prime_note == my_scale.get_tonic() + my_scale.notes[j] + (i * 12)) {
         octave = i;
         index = j;
         Serial.print("Note found: "), Serial.println(prime_note);
@@ -387,16 +381,16 @@ void play_notes(bool on, uint8_t prime_note) {
     }
   } 
 
-  for(int i = 0; i < scale.get_chord_notes(); i++) {
-    if(index + i * 2 >= scale.count_notes()) octave = 1;
-    else if(index + i * 2 >= 2*scale.count_notes()) octave = 2;
-    chords[i] = scale.get_tonic() + scale.notes[(index + i * 2) % scale.count_notes()] + (12 * octave);
+  for(int i = 0; i < my_scale.get_chord_notes(); i++) {
+    if(index + i * 2 >= my_scale.count_notes()) octave = 1;
+    else if(index + i * 2 >= 2*my_scale.count_notes()) octave = 2;
+    chords[i] = my_scale.get_tonic() + my_scale.notes[(index + i * 2) % my_scale.count_notes()] + (12 * octave);
   }
 
   Serial.print("chord state: "), Serial.println(on);
   Serial.print("chord: ");
 
-  for(int i = 0; i < scale.get_chord_notes(); i++) {
+  for(int i = 0; i < my_scale.get_chord_notes(); i++) {
     Serial.print(chords[i]), Serial.print(" ");    
   }
 

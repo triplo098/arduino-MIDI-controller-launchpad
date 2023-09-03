@@ -11,8 +11,6 @@
 #define LED_TYPE WS2812B
 #define ACCEPTANCE_RATE 32
 
-
-
 #define SETUP_MODE 0
 #define NORMAL_MODE 1
 #define AUTO_MODE 2 
@@ -24,14 +22,15 @@
 class config_settings {
 
 	public:
+		config_settings();
 		config_settings(scale _scale, uint8_t _mode, uint8_t _base_velocity, uint8_t _base_channel);
 		void store_settings(scale _scale, uint8_t _mode, uint8_t _base_velocity, uint8_t _base_channel);
-		void load_settings();
-	private:	
+		void load_from_EEPROM();
 		uint8_t mode;
+	private:	
 		uint8_t base_velocity;
 		uint8_t base_channel;
-		scale scale;
+		scale settings_scale;
 		
 
 };

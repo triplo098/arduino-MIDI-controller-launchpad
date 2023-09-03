@@ -46,9 +46,10 @@ void leds::fill_leds_palette() {
     leds_index++;
 }
 
-void leds::set_leds_palette(uint8_t mode) {
 
-    switch(mode) {
+void leds::update_leds(uint8_t _mode) {
+
+    switch(_mode) {
     case 0: default:
     leds_palette = ForestColors_p;
       break;
@@ -61,15 +62,7 @@ void leds::set_leds_palette(uint8_t mode) {
     case 3:
     leds_palette = LavaColors_p;
       break;
-  };
-}
-
-void leds::set_leds_blend(TBlendType _leds_blend) {
-
-    leds_blend = _leds_blend;
-}
-
-void leds::update_leds() {
+    };
 
     if(millis() - leds_timer > (1000 / updates_per_second)) {
 

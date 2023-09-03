@@ -23,6 +23,9 @@
 //   std::cout << "Number of notes: " << (int) s.count_notes() << std::endl;
 
 // }
+
+scale::scale() {}
+
 scale::scale(uint8_t tonic, char tonality, uint8_t chord_notes) {
 
   for(int i = 0; i < MAX_NOTES; i++) notes[i] = 255;
