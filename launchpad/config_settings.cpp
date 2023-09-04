@@ -2,22 +2,21 @@
 
 
 config_settings::config_settings() {}   
-config_settings::config_settings(scale _scale, uint8_t _mode, uint8_t _base_velocity, uint8_t _base_channel) {
+config_settings::config_settings(scale _scale, uint8_t _mode, lau_midi _lau_midi) {
 
     settings_scale = _scale;
     mode = _mode;
-    base_velocity = _base_velocity;
-    base_channel = _base_channel;
+    settings_lau_midi = _lau_midi;
 
 }
-void config_settings::store_settings(scale _scale, uint8_t _mode, uint8_t _base_velocity, uint8_t _base_channel ) {
+void config_settings::store_settings(scale _scale, uint8_t _mode, lau_midi _lau_midi ) {
     
     if( settings_scale.get_tonic() == _scale.get_tonic() && 
         settings_scale.get_tonality() == _scale.get_tonality() && 
         settings_scale.get_chord_notes() == _scale.get_chord_notes() && 
         mode == _mode && 
-        base_velocity == _base_velocity && 
-        base_channel == _base_channel) return;
+        settings_lau_midi.base_velocity == _lau_midi.base_velocity && 
+        settings_lau_midi.base_channel == _lau_midi.base_channel) return;
 
     Serial.println("Storing settings to EEPROM!!!");
     // StaticJsonDocument<96> doc;
@@ -48,8 +47,8 @@ void config_settings::load_from_EEPROM() {
     // settings_scale.set_tonality(doc["tonality"]);
     // settings_scale.set_chord_notes(doc["chord_notes"]);
     // mode = doc["mode"];
-    // base_velocity = doc["base_velocity"];
-    // base_channel = doc["base_channel"];
+    // settings_lau_midi.base_velocity = doc["base_velocity"];
+    // settings_lau_midi.base_channel = doc["base_channel"];
 
 }
 

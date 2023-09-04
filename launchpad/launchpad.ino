@@ -7,6 +7,7 @@
 #include "scale.h"
 #include "config_settings.h"
 #include "leds.h"
+#include "lau_midi.h"
 
 /*********************
 Preparing multiplexer with potentiometers
@@ -32,10 +33,9 @@ Preparing multiplexer with potentiometers
 Preparing "music logic" and MIDI default parameters
 *********************/
 scale my_scale(60, MAJOR, 1);
-uint8_t base_velocity = 100;
-uint8_t base_channel = 0;
+lau_midi my_midi(100, 0)
 
-config_settings congfig_settings(my_scale, SETUP_MODE, base_velocity, base_channel);
+config_settings congfig_settings(my_scale, SETUP_MODE, my_midi);
 
 /*********************
 Preparing LEDs
@@ -59,23 +59,7 @@ Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 /*********************
 Default send-MIDI functions from MIDIUSB/examples/MIDIUSB_write/MIDIUSB_write.ino
 *********************/
-void noteOn(uint8_t channel, uint8_t pitch, uint8_t velocity) {
-  midiEventPacket_t noteOn = {0x09, 0x90 | channel, pitch, velocity};
-  MidiUSB.sendMIDI(noteOn);
-}
 
-void noteOff(uint8_t channel, uint8_t pitch, uint8_t velocity) {
-  midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
-  MidiUSB.sendMIDI(noteOff);
-}
-
-void controlChange(uint8_t channel, uint8_t control, uint8_t value) {
-  midiEventPacket_t event = {0x0B, 0xB0 | channel, control, value};
-  MidiUSB.sendMIDI(event);
-}
-
-
-unsigned long auto_mode_timer;
 
 
 void setup() {
@@ -91,13 +75,13 @@ void setup() {
   // potentiometers[5].control_number = 3;  //random
   // potentiometers[6].control_number = 4;  //random
 
+  congfig_settings.load_from_EEPROM();
 
   leds.initialize_leds();
 
   Serial.begin(9600);
 
-  congfig_settings.load_from_EEPROM();
-
+  notes_to_keypad();
 }
 
 void loop() {
@@ -142,7 +126,7 @@ void loop() {
 
 //     //Sending midi control change
 //     if(mode == NORMAL_MODE) {
-//       controlChange(base_channel, control_number, value / 8);
+//       controlChange(control_number, value / 8);
 //       continue;
 //     }
 
@@ -224,7 +208,7 @@ void activate_keypad(uint8_t& mode) {
             } 
                 
             note = (uint8_t) kpd.key[i].kchar;
-            play_notes(true, note);
+            play_notes(true, note, my_scale);
         
             break;
           case HOLD:
@@ -239,7 +223,7 @@ void activate_keypad(uint8_t& mode) {
             
             note = (uint8_t) kpd.key[i].kchar;
             
-            play_notes(false, note);
+            play_notes(false, note, my_scale);
 
             break;
           case IDLE:
@@ -264,7 +248,7 @@ void notes_to_keypad() {
   //Turning all of the notes from previou keypad off
   for(int i = 0 ; i < ROWS; i++) {
     for(int j = 0 ; j < COLS; j++) {
-      noteOff(base_channel, (int)keys[i][j], base_velocity);
+      noteOff((int)keys[i][j]);
     } 
   }
   
@@ -339,11 +323,6 @@ void auto_mode() {
   // }
 }
 
-void clean_midi() {
-
-  //Turning all of the notes off
-    for(int i = 0 ; i < 256; i++) noteOff(base_channel, i, base_velocity);
-}
 
 //Not used yet. It's should be useful while generating chords
 int wheel_selection_index(int size) {
@@ -362,66 +341,3 @@ int wheel_selection_index(int size) {
   }
 }
 
-void play_notes(bool on, uint8_t prime_note) {
-
-
-  int chords[my_scale.get_chord_notes()];
-
-  uint8_t octave = 0;
-  uint8_t index = 0;
-
-  for(int i = 0; i < 3; i++){
-    for(int j = 0; j < my_scale.count_notes(); j++) {
-      if(prime_note == my_scale.get_tonic() + my_scale.notes[j] + (i * 12)) {
-        octave = i;
-        index = j;
-        Serial.print("Note found: "), Serial.println(prime_note);
-        Serial.print("Octave and index: "), Serial.print(octave), Serial.print(" "), Serial.println(index);
-      }
-    }
-  } 
-
-  for(int i = 0; i < my_scale.get_chord_notes(); i++) {
-    if(index + i * 2 >= my_scale.count_notes()) octave = 1;
-    else if(index + i * 2 >= 2*my_scale.count_notes()) octave = 2;
-    chords[i] = my_scale.get_tonic() + my_scale.notes[(index + i * 2) % my_scale.count_notes()] + (12 * octave);
-  }
-
-  Serial.print("chord state: "), Serial.println(on);
-  Serial.print("chord: ");
-
-  for(int i = 0; i < my_scale.get_chord_notes(); i++) {
-    Serial.print(chords[i]), Serial.print(" ");    
-  }
-
-  for(int note : chords) {
-    if(on == true) {
-      //Serial.print(note), Serial.print(" ");            
-      noteOn(base_channel, note, base_velocity);
-
-    } 
-    else {
-      //Serial.print(note), Serial.print(" ");            
-      noteOff(base_channel, note, base_velocity);
-    }
-  }
-  Serial.println();
-}
-
-//Not used yet. It's for playing chodrs without using delay
-void note_on_time(uint8_t note, int timer) {
-
-  static int time = timer;
-  static unsigned long note_time = millis();
-  static bool note_on = false;
-
-  if(note_on == false) {
-    noteOn(base_channel, note, base_velocity);
-    note_on = true;
-  } 
-  else if((millis() - note_time) >= time) {
-    noteOff(base_channel, note, base_velocity);
-    note_on = false;
-    note_time = millis();
-  }
-}
