@@ -1,6 +1,16 @@
 # Arduino MIDI Controller Project
 
-This Arduino project is designed to create a MIDI controller using an Arduino Pro Micro. It can generate and send MIDI messages based on user input from potentiometers, a keypad, and various configuration parameters. In other words it is DIY launchpad! 
+This project is a MIDI controller, based on an Arduino Pro Micro. It can generate and send MIDI messages based on user input from potentiometers, a keypad, and various configuration parameters. In other words it is DIY launchpad! 
+
+## Video presentation
+I'm using here [BandLab](https://www.bandlab.com/feed/trending)  - easy-to-use platform for creating music.
+
+<p align="center">
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=7bkNr0ojT5M
+" target="_blank"><img src="http://img.youtube.com/vi/7bkNr0ojT5M/0.jpg" 
+alt="IMAGE ALT TEXT HERE" width="480" height="360" border="10" /></a>
+
+</p>
 
 ## Libraries Used
 
