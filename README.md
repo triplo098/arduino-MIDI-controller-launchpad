@@ -8,8 +8,7 @@ I'm using here [BandLab](https://www.bandlab.com/feed/trending)  - easy-to-use p
 <p align="center">
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=7bkNr0ojT5M
 " target="_blank"><img src="http://img.youtube.com/vi/7bkNr0ojT5M/0.jpg" 
-alt="IMAGE ALT TEXT HERE" width="480" height="360" border="10" /></a>
-
+alt="IMAGE ALT TEXT HERE" width="%80" height="%45" border="10" /></a>
 </p>
 
 ## Libraries Used
@@ -39,7 +38,6 @@ The Arduino Pro Micro MIDI controller supports the following features:
 - LED Visualization:
   - LEDs are used to visualize potentiometer values and sending notes.
 
-
 ## Usage
 
 1. Assemble Hardware: Wire up the potentiometers, keypad, and LEDs according to the circut schematic. Print 3D parts from launchpad_parts folder, I used black PLA for top part and lucent PETG for rest, so light from LEDs was visible. 
@@ -47,13 +45,7 @@ The Arduino Pro Micro MIDI controller supports the following features:
 3. Connect the Arduino device using USB and upload code.
 4. Have fun and be creative!
 
-TO DO
 ## Additional Notes
-
-TO DO
-## Acknowledgments
-
-TO DO
-## License
+Changing code structure to OOP approach- work in progress:) 
 
    
